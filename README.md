@@ -15,7 +15,7 @@ LLM analyzes; deterministic Core Image renders.
 1. `cd app && xcodegen generate`
 2. Open `Auteur.xcodeproj` in Xcode
 3. Set your development team in target signing
-4. Edit `Auteur/LLM/BackendClient.swift` — set `backendBaseURL` to your deployed Worker
+4. Edit `app/Auteur/LLM/BackendClient.swift` — set `BackendClient.baseURL` to your deployed Worker URL
 5. Build + run on an iPhone (camera does not work in simulator)
 
 ### Backend (Cloudflare Worker)
@@ -23,7 +23,7 @@ LLM analyzes; deterministic Core Image renders.
 2. `npx wrangler secret put ANTHROPIC_API_KEY`
 3. `npx wrangler kv namespace create RATELIMIT` — paste returned `id` into `wrangler.toml`
 4. `npx wrangler deploy`
-5. Note the deployed URL; paste it into `BackendClient.swift`
+5. Note the deployed URL; paste it into `BackendClient.baseURL` (step 4 above)
 
 ### Tests
 - Backend: `cd backend && npm test`
