@@ -8,8 +8,8 @@ public enum BackendError: Error {
 }
 
 public final class BackendClient {
-    /// EDIT THIS after deploying to Vercel. Next.js routes live under `/api/*`.
-    public static var baseURL = URL(string: "https://camera-eric.vercel.app")!
+    /// Vercel production URL. Next.js routes live under `/api/*`.
+    public static var baseURL = URL(string: "https://camera-ivory-psi.vercel.app")!
 
     public init() {}
 
