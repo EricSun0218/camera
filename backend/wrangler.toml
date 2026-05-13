@@ -1,0 +1,10 @@
+name = "auteur-backend"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[[kv_namespaces]]
+binding = "RATELIMIT"
+id = "PASTE_KV_ID_HERE"   # `wrangler kv namespace create RATELIMIT`
+
+[vars]
+LOG_LEVEL = "info"
