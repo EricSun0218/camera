@@ -40,6 +40,9 @@ export async function POST(req: Request) {
     return NextResponse.json(ok.data)
   } catch (e) {
     console.error('grade', e)
-    return NextResponse.json(neutralFallback)
+    const debug = req.headers.get('x-debug') === '1'
+        ? { _debug: e instanceof Error ? `${e.name}: ${e.message}` : String(e) }
+        : {}
+    return NextResponse.json({ ...neutralFallback, ...debug })
   }
 }
