@@ -15,6 +15,7 @@ const RequestBody = z.object({
 
 export async function POST(req: Request) {
   const apiKey = process.env.ANTHROPIC_API_KEY
+  const baseURL = process.env.ANTHROPIC_BASE_URL
   if (!apiKey) return NextResponse.json({ error: 'misconfigured' }, { status: 500 })
 
   const parse = RequestBody.safeParse(await req.json().catch(() => ({})))
@@ -28,7 +29,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const raw = await callClaudeVision(makeAnthropic(apiKey), {
+    const raw = await callClaudeVision(makeAnthropic(apiKey, baseURL), {
       system: COLORIST_SYSTEM_PROMPT_V1,
       imageB64: parse.data.image_b64,
       mediaType: 'image/jpeg',

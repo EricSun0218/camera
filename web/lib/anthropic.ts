@@ -46,6 +46,6 @@ function parseJsonLoose(text: string): unknown {
   }
 }
 
-export function makeAnthropic(apiKey: string): Anthropic {
-  return new Anthropic({ apiKey })
+export function makeAnthropic(apiKey: string, baseURL?: string): Anthropic {
+  return new Anthropic(baseURL ? { apiKey, baseURL } : { apiKey })
 }
