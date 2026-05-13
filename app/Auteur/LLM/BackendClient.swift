@@ -8,17 +8,17 @@ public enum BackendError: Error {
 }
 
 public final class BackendClient {
-    /// EDIT THIS after deploying the Worker.
-    public static var baseURL = URL(string: "https://auteur-backend.YOUR-SUBDOMAIN.workers.dev")!
+    /// EDIT THIS after deploying to Vercel. Next.js routes live under `/api/*`.
+    public static var baseURL = URL(string: "https://camera-eric.vercel.app")!
 
     public init() {}
 
     public func coach(imageB64: String) async throws -> CoachTip {
-        try await post(path: "/coach", imageB64: imageB64, timeout: 1.5, as: CoachTip.self)
+        try await post(path: "/api/coach", imageB64: imageB64, timeout: 1.5, as: CoachTip.self)
     }
 
     public func grade(imageB64: String) async throws -> SceneAnalysis {
-        try await post(path: "/grade", imageB64: imageB64, timeout: 4.0, as: SceneAnalysis.self)
+        try await post(path: "/api/grade", imageB64: imageB64, timeout: 4.0, as: SceneAnalysis.self)
     }
 
     private func post<T: Decodable>(path: String, imageB64: String, timeout: TimeInterval, as: T.Type) async throws -> T {
