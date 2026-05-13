@@ -1,0 +1,52 @@
+# app/project.yml
+name: Auteur
+options:
+  bundleIdPrefix: com.auteur
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: zh-Hans
+
+settings:
+  base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.10"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1"   # iPhone only
+    SUPPORTS_MACCATALYST: NO
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  Auteur:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Auteur
+    info:
+      path: Auteur/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Auteur
+        UILaunchScreen: {}
+        UIRequiresFullScreen: YES
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSCameraUsageDescription: "Auteur 需要相机来拍摄并实时给出构图与调色建议。"
+        NSPhotoLibraryAddUsageDescription: "Auteur 将自动调色后的照片保存到你的相册。"
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.auteur.app
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        DEVELOPMENT_TEAM: ""    # set in Xcode
+    resources:
+      - path: Auteur/Resources/Assets.xcassets
+
+  AuteurTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: AuteurTests
+    dependencies:
+      - target: Auteur
