@@ -358,17 +358,49 @@ Content-Type: application/json
 
 ## 13a. Addendum (2026-05-14) — Pose guidance
 
-Added a third real-time aid alongside grid / horizon / subject box: **body pose**, when a
-person is present. Same hybrid pattern as the rest of compose:
+Two layers, both AI-driven, both consume the **existing** `/api/coach` endpoint — no new
+dependency, no new API surface, no new UI chrome.
+
+### 13a.1 Body-pose monitoring (passive feedback)
+
+Real-time skeleton from `VNDetectHumanBodyPoseRequest` (10 Hz). Local code derives
+shoulder slant / spine tilt / head tilt; the worst issue surfaces as a small banner.
 
 | Aid | Source | Update rate |
 |---|---|---|
 | Body skeleton + joint dots | `VNDetectHumanBodyPoseRequest` | 10 Hz |
 | Local pose hints (shoulder slant, spine tilt, head tilt) | derived from joints | 10 Hz |
-| LLM pose suggestion ("放松肩膀", "重心换脚", "下巴微抬") | Coach prompt v2 | ~0.5 Hz (existing 2s cadence) |
 
-`ComposeState` gained a `bodyPose: BodyPose` field. The Coach system prompt bumped
-to `coach-v2` (sixth bullet adds pose). No new API route, no new dependency.
+### 13a.2 AI-placed pose silhouette (active guidance, the "magic")
+
+The Coach LLM now returns up to four optional fields per call:
+
+```ts
+pose_id:     'stand' | 'arms_open' | 'walk' | 'wave' | 'yoga' |
+             'mind_body' | 'dance' | 'child_lift' | null
+pose_x:      number   // 0..1 horizontal CENTER position on viewfinder
+pose_y:      number   // 0..1 vertical CENTER position on viewfinder
+pose_height: number   // 0.3..0.95 silhouette height as fraction of viewfinder height
+```
+
+When set, the iOS app renders the corresponding silhouette (SF Symbols `figure.*`) at
+the prescribed screen-space coordinates with a white neon-outline glow at 55 % opacity.
+
+**The composition trick:** the silhouette is **screen-fixed**, not world-anchored. As the
+user moves the phone, the outline stays where it is on screen; the user must walk /
+tilt / pan so the real subject in the world fills the outline. Once they do, the subject
+is automatically (a) in a flattering pose and (b) in a well-composed position (rule of
+thirds / headroom / negative space chosen by the model from scene context).
+
+**Library:** 8 built-in poses backed by SF Symbols — zero asset weight, vector at any size.
+Future versions can replace SF Symbols with on-device person-segmentation
+(`VNGeneratePersonSegmentationRequest`) of user-imported reference photos.
+
+**Non-interactive by design:** no picker, no manual placement, no opacity slider, no
+drag/pinch. The model owns selection + placement + size; the user just shoots.
+
+**Prompt:** Coach bumped to `coach-v3`. Old `v1/v2` constants are kept as aliases for
+back-compat during deploy.
 
 ## 14. Open decisions deferred to later specs
 

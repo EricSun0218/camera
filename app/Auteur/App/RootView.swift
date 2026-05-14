@@ -98,6 +98,17 @@ public struct RootView: View {
 
     public init() {}
 
+    /// Resolve the LLM's pose placement into (template, x, y, height).
+    /// AI-driven only — no user picker, no fixed position. The Coach LLM places the
+    /// silhouette using composition rules (rule of thirds, headroom, negative space)
+    /// so the user moves the phone to align the real subject into the outline.
+    private var aiPose: (template: PoseTemplate, x: Double, y: Double, h: Double)? {
+        guard let p = vm.coachTip.posePlacement,
+              let t = PoseLibrary.templates.first(where: { $0.id == p.id })
+        else { return nil }
+        return (t, p.x, p.y, p.height)
+    }
+
     public var body: some View {
         PermissionGate {
             ZStack {
@@ -106,6 +117,17 @@ public struct RootView: View {
 
                 CompositionOverlay(state: vm.compose, coachTip: vm.coachTip)
                     .ignoresSafeArea()
+
+                // Pose silhouette: AI picks template AND composition-aware screen placement.
+                // Position smoothly tweens between Coach updates (~2 s cadence).
+                if let p = aiPose {
+                    PoseOverlay(template: p.template,
+                                positionX: p.x,
+                                positionY: p.y,
+                                heightFraction: p.h)
+                        .ignoresSafeArea()
+                        .id(p.template.id)
+                }
 
                 if let (before, after) = vm.beforeAfter {
                     BeforeAfterReveal(before: before, after: after)

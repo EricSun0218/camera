@@ -42,9 +42,22 @@ export const SceneAnalysisSchema = z.object({
 
 export type SceneAnalysis = z.infer<typeof SceneAnalysisSchema>
 
+/** Must mirror PoseLibrary.templates in the iOS app. */
+export const POSE_IDS = [
+  'stand', 'arms_open', 'walk', 'wave', 'yoga', 'mind_body', 'dance', 'child_lift',
+] as const
+
 export const CoachTipSchema = z.object({
   tip:      z.string().max(80).nullable(),
   priority: z.enum(['low','med','high']),
+  // AI-picked pose silhouette to show, or null/omitted for no overlay.
+  pose_id:  z.enum(POSE_IDS).nullable().optional(),
+  // Composition-aware placement on the viewfinder, normalized 0..1.
+  // Origin top-left. Center of the silhouette sits at (pose_x, pose_y).
+  pose_x:      z.number().min(0).max(1).optional(),
+  pose_y:      z.number().min(0).max(1).optional(),
+  // Silhouette height as a fraction of viewfinder height. Wider/taller frames make this smaller.
+  pose_height: z.number().min(0.3).max(0.95).optional(),
 })
 
 export type CoachTip = z.infer<typeof CoachTipSchema>
