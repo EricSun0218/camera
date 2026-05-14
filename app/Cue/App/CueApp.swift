@@ -7,7 +7,6 @@ struct CueApp: App {
         WindowGroup {
             RootView()
                 .preferredColorScheme(.dark)
-                .statusBar(hidden: true)
         }
     }
 }

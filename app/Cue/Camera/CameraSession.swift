@@ -51,7 +51,10 @@ public final class CameraSession: NSObject {
                 guard self.session.canAddOutput(self.videoOutput) else { throw CameraError.configureFailed }
                 self.session.addOutput(self.videoOutput)
                 if let conn = self.videoOutput.connection(with: .video) {
-                    conn.videoOrientation = .portrait
+                    // iOS 17+: 90° = portrait. Replaces deprecated videoOrientation.
+                    if conn.isVideoRotationAngleSupported(90) {
+                        conn.videoRotationAngle = 90
+                    }
                 }
 
                 guard self.session.canAddOutput(self.photoOutput) else { throw CameraError.configureFailed }

@@ -7,6 +7,11 @@ public enum BackendError: Error {
     case rateLimited(retryAfter: TimeInterval)
 }
 
+private struct BackendRequestBody: Encodable {
+    let image_b64: String
+    let client_version: String
+}
+
 public final class BackendClient {
     /// Vercel production URL. Next.js routes live under `/api/*`.
     public static var baseURL = URL(string: "https://camera-ivory-psi.vercel.app")!
@@ -29,11 +34,7 @@ public final class BackendClient {
                      forHTTPHeaderField: "X-Client-Version")
         req.timeoutInterval = timeout
 
-        struct Body: Encodable {
-            let image_b64: String
-            let client_version: String
-        }
-        let body = Body(
+        let body = BackendRequestBody(
             image_b64: imageB64,
             client_version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
         )
