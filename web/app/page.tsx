@@ -4,7 +4,7 @@ export default function Page() {
       <h1>Cue</h1>
       <p>
         Cue backend. See{' '}
-        <a href="https://github.com/EricSun0218/camera">GitHub</a> for the iOS client.
+        <a href="https://github.com/EricSun0218/cue">GitHub</a> for the iOS client.
       </p>
       <ul>
         <li><code>POST /api/coach</code></li>
