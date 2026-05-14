@@ -1,9 +1,9 @@
 export default function Page() {
   return (
     <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem', maxWidth: 720 }}>
-      <h1>Auteur</h1>
+      <h1>Cue</h1>
       <p>
-        Auteur backend. See{' '}
+        Cue backend. See{' '}
         <a href="https://github.com/EricSun0218/camera">GitHub</a> for the iOS client.
       </p>
       <ul>

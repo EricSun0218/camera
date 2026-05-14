@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
 
 export const metadata = {
-  title: 'Auteur',
-  description: 'Auteur backend on Vercel.',
+  title: 'Cue',
+  description: 'Cue backend on Vercel.',
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {
