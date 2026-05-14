@@ -1,5 +1,6 @@
 // app/Auteur/Compose/CompositionOverlay.swift
 import SwiftUI
+import Vision
 
 public struct CompositionOverlay: View {
     let state: ComposeState
@@ -22,6 +23,10 @@ public struct CompositionOverlay: View {
                 }
                 ForEach(Array(state.faceBoxes.enumerated()), id: \.offset) { _, box in
                     boundingBox(box, in: geo.size, color: .green)
+                }
+                if state.bodyPose.confidence > 0.3 {
+                    skeleton(in: geo.size)
+                    poseHints(in: geo.size)
                 }
                 VStack {
                     Spacer()
@@ -83,6 +88,83 @@ public struct CompositionOverlay: View {
             .stroke(color.opacity(0.9), lineWidth: 1.5)
             .frame(width: r.width, height: r.height)
             .position(x: r.midX, y: r.midY)
+    }
+
+    // MARK: pose skeleton
+
+    /// Edges to draw. Order from spec: head-shoulders-arms / spine / legs.
+    private static let skeletonEdges: [(VNHumanBodyPoseObservation.JointName, VNHumanBodyPoseObservation.JointName)] = [
+        // shoulders
+        (.leftShoulder, .rightShoulder),
+        // arms
+        (.leftShoulder, .leftElbow), (.leftElbow, .leftWrist),
+        (.rightShoulder, .rightElbow), (.rightElbow, .rightWrist),
+        // torso
+        (.leftShoulder, .leftHip), (.rightShoulder, .rightHip),
+        (.leftHip, .rightHip),
+        // legs
+        (.leftHip, .leftKnee), (.leftKnee, .leftAnkle),
+        (.rightHip, .rightKnee), (.rightKnee, .rightAnkle),
+        // head connections
+        (.nose, .leftEye), (.nose, .rightEye),
+        (.leftEye, .leftEar), (.rightEye, .rightEar),
+    ]
+
+    private func skeleton(in size: CGSize) -> some View {
+        let pose = state.bodyPose
+        func uiPoint(_ p: CGPoint) -> CGPoint {
+            // Vision normalized coords: origin bottom-left; flip Y for UIKit/SwiftUI.
+            CGPoint(x: p.x * size.width, y: (1 - p.y) * size.height)
+        }
+        return ZStack {
+            // bones
+            Path { path in
+                for (a, b) in Self.skeletonEdges {
+                    if let p = pose.joints[a], let q = pose.joints[b] {
+                        path.move(to: uiPoint(p))
+                        path.addLine(to: uiPoint(q))
+                    }
+                }
+            }
+            .stroke(Color.cyan.opacity(0.85), lineWidth: 2)
+            // joint dots
+            ForEach(Array(pose.joints.keys.enumerated()), id: \.offset) { _, name in
+                if let p = pose.joints[name] {
+                    let ui = uiPoint(p)
+                    Circle()
+                        .fill(Color.cyan)
+                        .frame(width: 6, height: 6)
+                        .position(x: ui.x, y: ui.y)
+                }
+            }
+        }
+    }
+
+    /// Top-of-screen one-liner that surfaces the worst local pose finding (shoulder slant, spine tilt, head tilt).
+    /// Local feedback is fast; LLM coach handles higher-level pose suggestions.
+    @ViewBuilder
+    private func poseHints(in size: CGSize) -> some View {
+        let pose = state.bodyPose
+        let issues: [String] = [
+            pose.shoulderSlantDegrees.flatMap { abs($0) > 6 ? "肩膀偏斜 \(Int(abs($0)))°,放松一边" : nil },
+            pose.spineTiltDegrees.flatMap    { abs($0) > 5 ? "身体微向\($0 > 0 ? "右" : "左")倾,站直一点" : nil },
+            pose.headTiltDegrees.flatMap     { abs($0) > 7 ? "头微歪,正一下" : nil },
+        ].compactMap { $0 }
+
+        if let hint = issues.first {
+            VStack {
+                Text(hint)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.45))
+                    .clipShape(Capsule())
+                    .padding(.top, 80)
+                Spacer()
+            }
+            .frame(width: size.width)
+        }
     }
 
     // MARK: coach banner

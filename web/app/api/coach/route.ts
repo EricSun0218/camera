@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { CoachTipSchema } from '@/lib/schemas'
-import { COACH_SYSTEM_PROMPT_V1 } from '@/lib/prompts'
+import { COACH_SYSTEM_PROMPT_V2 } from '@/lib/prompts'
 import { callClaudeVision, makeAnthropic } from '@/lib/anthropic'
 
 export const runtime = 'nodejs'
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
 
   try {
     const raw = await callClaudeVision(makeAnthropic(apiKey, baseURL), {
-      system: COACH_SYSTEM_PROMPT_V1,
+      system: COACH_SYSTEM_PROMPT_V2,
       imageB64: parse.data.image_b64,
       mediaType: 'image/jpeg',
       maxTokens: 256,

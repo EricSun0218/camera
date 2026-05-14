@@ -356,6 +356,20 @@ Content-Type: application/json
 - Sharing UI (Save to Photos is enough — users share from there).
 - Multi-photo / burst / live-photo / video.
 
+## 13a. Addendum (2026-05-14) — Pose guidance
+
+Added a third real-time aid alongside grid / horizon / subject box: **body pose**, when a
+person is present. Same hybrid pattern as the rest of compose:
+
+| Aid | Source | Update rate |
+|---|---|---|
+| Body skeleton + joint dots | `VNDetectHumanBodyPoseRequest` | 10 Hz |
+| Local pose hints (shoulder slant, spine tilt, head tilt) | derived from joints | 10 Hz |
+| LLM pose suggestion ("放松肩膀", "重心换脚", "下巴微抬") | Coach prompt v2 | ~0.5 Hz (existing 2s cadence) |
+
+`ComposeState` gained a `bodyPose: BodyPose` field. The Coach system prompt bumped
+to `coach-v2` (sixth bullet adds pose). No new API route, no new dependency.
+
 ## 14. Open decisions deferred to later specs
 
 - **Subscription model and free-tier cap.** Will be its own spec once we have TestFlight feedback on retention.
