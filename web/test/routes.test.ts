@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@/lib/anthropic', () => ({
-  callClaudeVision: vi.fn(),
-  makeAnthropic: vi.fn(() => ({})),
+vi.mock('@/lib/llm', () => ({
+  callVision: vi.fn(),
+  makeLLM: vi.fn(() => ({})),
+  llmConfig: vi.fn(() => ({
+    apiKey: 'test-key',
+    baseURL: 'https://mock/v1',
+    model: 'test-model',
+  })),
 }))
 
-import * as anthropicModule from '@/lib/anthropic'
+import * as llmModule from '@/lib/llm'
 import { POST as coachPOST } from '@/app/api/coach/route'
 import { POST as gradePOST } from '@/app/api/grade/route'
 
@@ -38,13 +43,18 @@ function makeReq(path: string, body: object) {
 }
 
 beforeEach(() => {
-  process.env.ANTHROPIC_API_KEY = 'test'
   vi.clearAllMocks()
+  // re-stub llmConfig because clearAllMocks erases the default implementation
+  vi.mocked(llmModule.llmConfig).mockReturnValue({
+    apiKey: 'test-key',
+    baseURL: 'https://mock/v1',
+    model: 'test-model',
+  })
 })
 
 describe('/api/coach', () => {
   it('returns parsed tip', async () => {
-    vi.mocked(anthropicModule.callClaudeVision).mockResolvedValue(fakeCoach)
+    vi.mocked(llmModule.callVision).mockResolvedValue(fakeCoach)
     const res = await coachPOST(makeReq('/api/coach', { image_b64: 'xx', client_version: '1.0.0' }))
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(fakeCoach)
@@ -56,7 +66,7 @@ describe('/api/coach', () => {
   })
 
   it('returns silent on bad shape', async () => {
-    vi.mocked(anthropicModule.callClaudeVision).mockResolvedValue({ wrong: true })
+    vi.mocked(llmModule.callVision).mockResolvedValue({ wrong: true })
     const res = await coachPOST(makeReq('/api/coach', { image_b64: 'xx' }))
     expect(res.status).toBe(200)
     const body = await res.json() as any
@@ -65,17 +75,23 @@ describe('/api/coach', () => {
   })
 
   it('returns silent on thrown error', async () => {
-    vi.mocked(anthropicModule.callClaudeVision).mockRejectedValue(new Error('boom'))
+    vi.mocked(llmModule.callVision).mockRejectedValue(new Error('boom'))
     const res = await coachPOST(makeReq('/api/coach', { image_b64: 'xx' }))
     expect(res.status).toBe(200)
     const body = await res.json() as any
     expect(body.tip).toBeNull()
   })
+
+  it('500s when env not configured', async () => {
+    vi.mocked(llmModule.llmConfig).mockReturnValue(null)
+    const res = await coachPOST(makeReq('/api/coach', { image_b64: 'xx' }))
+    expect(res.status).toBe(500)
+  })
 })
 
 describe('/api/grade', () => {
   it('returns parsed scene analysis', async () => {
-    vi.mocked(anthropicModule.callClaudeVision).mockResolvedValue(fakeGrade)
+    vi.mocked(llmModule.callVision).mockResolvedValue(fakeGrade)
     const res = await gradePOST(makeReq('/api/grade', { image_b64: 'xx', client_version: '1.0.0' }))
     expect(res.status).toBe(200)
     const body = await res.json() as any
@@ -88,7 +104,7 @@ describe('/api/grade', () => {
   })
 
   it('falls back to neutral grade on bad shape', async () => {
-    vi.mocked(anthropicModule.callClaudeVision).mockResolvedValue({ totally: 'wrong' })
+    vi.mocked(llmModule.callVision).mockResolvedValue({ totally: 'wrong' })
     const res = await gradePOST(makeReq('/api/grade', { image_b64: 'xx' }))
     expect(res.status).toBe(200)
     const body = await res.json() as any
@@ -97,7 +113,7 @@ describe('/api/grade', () => {
   })
 
   it('falls back to neutral grade on thrown error', async () => {
-    vi.mocked(anthropicModule.callClaudeVision).mockRejectedValue(new Error('boom'))
+    vi.mocked(llmModule.callVision).mockRejectedValue(new Error('boom'))
     const res = await gradePOST(makeReq('/api/grade', { image_b64: 'xx' }))
     expect(res.status).toBe(200)
     const body = await res.json() as any

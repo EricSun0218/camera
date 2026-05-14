@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { SceneAnalysisSchema, neutralGrade } from '@/lib/schemas'
 import { COLORIST_SYSTEM_PROMPT_V1 } from '@/lib/prompts'
-import { callClaudeVision, makeAnthropic } from '@/lib/anthropic'
+import { callVision, makeLLM, llmConfig } from '@/lib/llm'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -14,9 +14,8 @@ const RequestBody = z.object({
 })
 
 export async function POST(req: Request) {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  const baseURL = process.env.ANTHROPIC_BASE_URL
-  if (!apiKey) return NextResponse.json({ error: 'misconfigured' }, { status: 500 })
+  const cfg = llmConfig()
+  if (!cfg) return NextResponse.json({ error: 'misconfigured' }, { status: 500 })
 
   const parse = RequestBody.safeParse(await req.json().catch(() => ({})))
   if (!parse.success) return NextResponse.json({ error: 'bad_body' }, { status: 400 })
@@ -29,12 +28,16 @@ export async function POST(req: Request) {
   }
 
   try {
-    const raw = await callClaudeVision(makeAnthropic(apiKey, baseURL), {
-      system: COLORIST_SYSTEM_PROMPT_V1,
-      imageB64: parse.data.image_b64,
-      mediaType: 'image/jpeg',
-      maxTokens: 1536,
-    })
+    const raw = await callVision(
+      makeLLM(cfg.apiKey, cfg.baseURL),
+      {
+        system: COLORIST_SYSTEM_PROMPT_V1,
+        imageB64: parse.data.image_b64,
+        mediaType: 'image/jpeg',
+        maxTokens: 1536,
+      },
+      cfg.model,
+    )
     const ok = SceneAnalysisSchema.safeParse(raw)
     if (!ok.success) return NextResponse.json(neutralFallback)
     return NextResponse.json(ok.data)
