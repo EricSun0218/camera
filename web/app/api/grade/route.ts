@@ -6,7 +6,8 @@ import { COLORIST_SYSTEM_PROMPT_V1 } from '@/lib/prompts'
 import { callVision, makeLLM, llmConfig } from '@/lib/llm'
 
 export const runtime = 'nodejs'
-export const maxDuration = 30
+export const maxDuration = 60               // Hobby tier max — uyilink vision can take 15-40s cross-region
+export const preferredRegion = ['hkg1']     // Hong Kong: closest Vercel region to sz.uyilink.com
 
 const RequestBody = z.object({
   image_b64: z.string().min(1).max(2_000_000),
