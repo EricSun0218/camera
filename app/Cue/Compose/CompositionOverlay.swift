@@ -2,14 +2,15 @@
 import SwiftUI
 import Vision
 
+/// Always-on visual aids over the camera preview: rule-of-thirds grid, horizon line,
+/// saliency box, face boxes, and body-pose skeleton. **No text banners or tips** —
+/// AI guidance is surfaced via PoseOverlay / TargetFrame, not chatty captions.
 public struct CompositionOverlay: View {
     let state: ComposeState
-    let coachTip: CoachTip
     let showGrid: Bool
 
-    public init(state: ComposeState, coachTip: CoachTip, showGrid: Bool = true) {
+    public init(state: ComposeState, showGrid: Bool = true) {
         self.state = state
-        self.coachTip = coachTip
         self.showGrid = showGrid
     }
 
@@ -26,17 +27,7 @@ public struct CompositionOverlay: View {
                 }
                 if state.bodyPose.confidence > 0.3 {
                     skeleton(in: geo.size)
-                    poseHints(in: geo.size)
                 }
-                VStack {
-                    Spacer()
-                    if let tip = coachTip.tip, coachTip.isWorthShowing {
-                        coachBanner(tip)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                }
-                .padding(.bottom, 140)
-                .animation(.easeInOut(duration: 0.25), value: coachTip)
             }
         }
         .allowsHitTesting(false)
@@ -138,45 +129,5 @@ public struct CompositionOverlay: View {
                 }
             }
         }
-    }
-
-    /// Top-of-screen one-liner that surfaces the worst local pose finding (shoulder slant, spine tilt, head tilt).
-    /// Local feedback is fast; LLM coach handles higher-level pose suggestions.
-    @ViewBuilder
-    private func poseHints(in size: CGSize) -> some View {
-        let pose = state.bodyPose
-        let issues: [String] = [
-            pose.shoulderSlantDegrees.flatMap { abs($0) > 6 ? "肩膀偏斜 \(Int(abs($0)))°,放松一边" : nil },
-            pose.spineTiltDegrees.flatMap    { abs($0) > 5 ? "身体微向\($0 > 0 ? "右" : "左")倾,站直一点" : nil },
-            pose.headTiltDegrees.flatMap     { abs($0) > 7 ? "头微歪,正一下" : nil },
-        ].compactMap { $0 }
-
-        if let hint = issues.first {
-            VStack {
-                Text(hint)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.black.opacity(0.45))
-                    .clipShape(Capsule())
-                    .padding(.top, 80)
-                Spacer()
-            }
-            .frame(width: size.width)
-        }
-    }
-
-    // MARK: coach banner
-
-    private func coachBanner(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 15, weight: .medium))
-            .foregroundColor(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(.ultraThinMaterial.opacity(0.6))
-            .background(Color.black.opacity(0.35))
-            .clipShape(Capsule())
     }
 }
