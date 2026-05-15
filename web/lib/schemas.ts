@@ -36,7 +36,9 @@ export const LightingSchema = z.enum([
 export const SceneAnalysisSchema = z.object({
   scene:     SceneSchema,
   lighting:  LightingSchema,
-  rationale: z.string().max(120),
+  // 200 — Gemini sometimes writes 130-150 char rationales even when prompted for "<=120 chars".
+  // Cheap to widen here; UI truncates for display anyway.
+  rationale: z.string().max(200),
   grade:     GradeParamsSchema,
 })
 
