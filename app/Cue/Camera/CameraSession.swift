@@ -25,6 +25,10 @@ public final class CameraSession: NSObject {
     private let photoOutput = AVCapturePhotoOutput()
     private var videoDeviceInput: AVCaptureDeviceInput?
 
+    /// Guards against double captures (two taps, or capture() + captureWithAutofocus()
+    /// both firing). Mutated only on `sessionQueue`.
+    private var isCapturing = false
+
     public override init() {
         super.init()
     }
@@ -84,6 +88,8 @@ public final class CameraSession: NSObject {
     public func capture() {
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            guard !self.isCapturing else { return }
+            self.isCapturing = true
             let settings = AVCapturePhotoSettings()
             settings.photoQualityPrioritization = .quality
             settings.flashMode = .auto
@@ -97,6 +103,8 @@ public final class CameraSession: NSObject {
     public func captureWithAutofocus() {
         sessionQueue.async { [weak self] in
             guard let self, let device = self.videoDeviceInput?.device else { return }
+            guard !self.isCapturing else { return }
+            self.isCapturing = true
             let center = CGPoint(x: 0.5, y: 0.5)
             do {
                 try device.lockForConfiguration()
@@ -157,12 +165,78 @@ extension CameraSession: AVCaptureVideoDataOutputSampleBufferDelegate {
                               didOutput sampleBuffer: CMSampleBuffer,
                               from connection: AVCaptureConnection) {
         guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        delegate?.cameraDidEmitPreview(pb)
+        // AVFoundation recycles `pb`'s memory after this callback returns; the
+        // delegate stashes the buffer and reads it later, so hand it a deep copy.
+        guard let copy = CameraSession.deepCopyPixelBuffer(pb) else { return }
+        delegate?.cameraDidEmitPreview(copy)
+    }
+
+    /// Allocate a fresh CVPixelBuffer with the same width/height/format and
+    /// memcpy the source's pixel data into it. Returns nil on allocation failure.
+    static func deepCopyPixelBuffer(_ src: CVPixelBuffer) -> CVPixelBuffer? {
+        let width = CVPixelBufferGetWidth(src)
+        let height = CVPixelBufferGetHeight(src)
+        let format = CVPixelBufferGetPixelFormatType(src)
+
+        var dst: CVPixelBuffer?
+        let attrs: [CFString: Any] = [
+            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
+        ]
+        let status = CVPixelBufferCreate(kCFAllocatorDefault, width, height, format,
+                                         attrs as CFDictionary, &dst)
+        guard status == kCVReturnSuccess, let dst else { return nil }
+
+        CVPixelBufferLockBaseAddress(src, .readOnly)
+        CVPixelBufferLockBaseAddress(dst, [])
+        defer {
+            CVPixelBufferUnlockBaseAddress(dst, [])
+            CVPixelBufferUnlockBaseAddress(src, .readOnly)
+        }
+
+        let planeCount = CVPixelBufferGetPlaneCount(src)
+        if planeCount == 0 {
+            // Non-planar (e.g. 32BGRA).
+            guard let srcBase = CVPixelBufferGetBaseAddress(src),
+                  let dstBase = CVPixelBufferGetBaseAddress(dst) else { return nil }
+            let srcStride = CVPixelBufferGetBytesPerRow(src)
+            let dstStride = CVPixelBufferGetBytesPerRow(dst)
+            if srcStride == dstStride {
+                memcpy(dstBase, srcBase, srcStride * height)
+            } else {
+                let rowBytes = min(srcStride, dstStride)
+                for row in 0..<height {
+                    memcpy(dstBase.advanced(by: row * dstStride),
+                           srcBase.advanced(by: row * srcStride),
+                           rowBytes)
+                }
+            }
+        } else {
+            for plane in 0..<planeCount {
+                guard let srcBase = CVPixelBufferGetBaseAddressOfPlane(src, plane),
+                      let dstBase = CVPixelBufferGetBaseAddressOfPlane(dst, plane) else { return nil }
+                let srcStride = CVPixelBufferGetBytesPerRowOfPlane(src, plane)
+                let dstStride = CVPixelBufferGetBytesPerRowOfPlane(dst, plane)
+                let planeHeight = CVPixelBufferGetHeightOfPlane(src, plane)
+                if srcStride == dstStride {
+                    memcpy(dstBase, srcBase, srcStride * planeHeight)
+                } else {
+                    let rowBytes = min(srcStride, dstStride)
+                    for row in 0..<planeHeight {
+                        memcpy(dstBase.advanced(by: row * dstStride),
+                               srcBase.advanced(by: row * srcStride),
+                               rowBytes)
+                    }
+                }
+            }
+        }
+        return dst
     }
 }
 
 extension CameraSession: AVCapturePhotoCaptureDelegate {
     public func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        // Reset the capture guard on `sessionQueue` regardless of success/failure.
+        sessionQueue.async { [weak self] in self?.isCapturing = false }
         if let error {
             DispatchQueue.main.async { self.delegate?.cameraDidFail(error) }
             return

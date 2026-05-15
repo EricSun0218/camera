@@ -52,12 +52,64 @@ public final class LibraryStore: ObservableObject {
     // MARK: - Manifest
 
     private func loadManifest() {
-        guard let data = try? Data(contentsOf: manifestURL),
-              let decoded = try? decoder.decode([LibraryItem].self, from: data) else {
+        // First launch / no manifest at all — empty library is correct.
+        guard let data = try? Data(contentsOf: manifestURL) else {
             items = []
             return
         }
-        items = decoded
+        // Manifest exists and decodes — normal path.
+        if let decoded = try? decoder.decode([LibraryItem].self, from: data) {
+            items = decoded
+            return
+        }
+        // Manifest exists but is CORRUPT. Never silently wipe — that would let the
+        // next saveManifest() destroy every prior photo's metadata.
+        Self.log.error("loadManifest: corrupt manifest, preserving + attempting rebuild")
+        // 1. Copy the bad manifest aside so it's never overwritten / is recoverable.
+        let stamp = Int(Date().timeIntervalSince1970)
+        let backupURL = dir.appendingPathComponent("manifest.corrupt-\(stamp).json")
+        do {
+            try FileManager.default.copyItem(at: manifestURL, to: backupURL)
+        } catch {
+            Self.log.error("loadManifest: failed to back up corrupt manifest: \(error.localizedDescription, privacy: .public)")
+        }
+        // 2. Rebuild from the JPEG files actually on disk.
+        items = rebuildFromDisk()
+    }
+
+    /// Reconstruct minimal `LibraryItem`s by scanning the library directory for
+    /// `<uuid>_orig.jpg` originals and their `<uuid>_v<n>.jpg` variants.
+    private func rebuildFromDisk() -> [LibraryItem] {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else {
+            return []
+        }
+        let origSuffix = "_orig.jpg"
+        var rebuilt: [LibraryItem] = []
+        for name in names where name.hasSuffix(origSuffix) {
+            let idString = String(name.dropLast(origSuffix.count))
+            guard let id = UUID(uuidString: idString) else { continue }
+            let createdAt = (try? FileManager.default.attributesOfItem(
+                atPath: libraryURL(name).path)[.creationDate] as? Date) ?? Date()
+            // Collect variant files for this id: "<uuid>_v<n>.jpg".
+            let variantPrefix = "\(idString)_v"
+            let variantNames = names
+                .filter { $0.hasPrefix(variantPrefix) && $0.hasSuffix(".jpg") }
+                .sorted()
+            let variants: [GradeVariant] = variantNames.map { vName in
+                GradeVariant(
+                    id: UUID(), createdAt: createdAt, imageFilename: vName,
+                    scene: "recovered", lighting: "recovered", rationale: "recovered"
+                )
+            }
+            rebuilt.append(LibraryItem(
+                id: id, createdAt: createdAt,
+                originalFilename: name, variants: variants
+            ))
+        }
+        // Newest first, matching the normal ordering invariant.
+        rebuilt.sort { $0.createdAt > $1.createdAt }
+        Self.log.error("loadManifest: rebuilt \(rebuilt.count, privacy: .public) item(s) from disk")
+        return rebuilt
     }
 
     private func saveManifest() {
@@ -75,26 +127,31 @@ public final class LibraryStore: ObservableObject {
         dir.appendingPathComponent(name)
     }
 
-    private func writeJPEG(_ cg: CGImage, to filename: String) {
+    /// Encode and write a JPEG. Returns `true` only if the file is fully on disk.
+    /// On any failure the caller MUST NOT record a manifest entry for `filename`.
+    @discardableResult
+    private func writeJPEG(_ cg: CGImage, to filename: String) -> Bool {
         let url = libraryURL(filename)
         let data = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(
             data, UTType.jpeg.identifier as CFString, 1, nil
         ) else {
             Self.log.error("writeJPEG: destination create failed")
-            return
+            return false
         }
         CGImageDestinationAddImage(dest, cg, [
             kCGImageDestinationLossyCompressionQuality: 0.92
         ] as CFDictionary)
         guard CGImageDestinationFinalize(dest) else {
             Self.log.error("writeJPEG: finalize failed for \(filename, privacy: .public)")
-            return
+            return false
         }
         do {
             try (data as Data).write(to: url, options: .atomic)
+            return true
         } catch {
             Self.log.error("writeJPEG: disk write failed: \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
 
@@ -104,17 +161,42 @@ public final class LibraryStore: ObservableObject {
         return CGImageSourceCreateImageAtIndex(src, 0, nil)
     }
 
+    /// Decode a DOWNSAMPLED thumbnail of a stored JPEG without loading the full
+    /// (potentially 48MP) image into memory. Use this for grid cells, filmstrip
+    /// thumbs, and the editor's on-screen image — never `loadImage` for display.
+    public func loadThumbnail(_ filename: String, maxPixel: CGFloat = 400) -> CGImage? {
+        let url = libraryURL(filename)
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(src, 0, options as CFDictionary)
+    }
+
     // MARK: - Mutations
 
-    /// Persist a new capture: original + first graded variant. Returns the item id.
+    /// Persist a new capture: original + first graded variant.
+    /// Returns the item id, or `nil` if writing either image file failed (in
+    /// which case nothing is recorded in the manifest and no files are left).
     @discardableResult
-    public func addCapture(original: CGImage, graded: CGImage, analysis: SceneAnalysis) -> UUID {
+    public func addCapture(original: CGImage, graded: CGImage, analysis: SceneAnalysis) -> UUID? {
         let id = UUID()
         let now = Date()
         let originalName = "\(id.uuidString)_orig.jpg"
         let variantName  = "\(id.uuidString)_v0.jpg"
-        writeJPEG(original, to: originalName)
-        writeJPEG(graded, to: variantName)
+
+        guard writeJPEG(original, to: originalName) else {
+            Self.log.error("addCapture: original write failed, aborting insert")
+            return nil
+        }
+        guard writeJPEG(graded, to: variantName) else {
+            Self.log.error("addCapture: variant write failed, aborting insert")
+            // Clean up the original we already wrote so no file orphans.
+            try? FileManager.default.removeItem(at: libraryURL(originalName))
+            return nil
+        }
 
         let variant = GradeVariant(
             id: UUID(), createdAt: now, imageFilename: variantName,
@@ -130,11 +212,20 @@ public final class LibraryStore: ObservableObject {
     }
 
     /// Append a new graded variant to an existing item.
-    public func addVariant(itemID: UUID, graded: CGImage, analysis: SceneAnalysis) {
-        guard let idx = items.firstIndex(where: { $0.id == itemID }) else { return }
+    /// Returns `true` on success; if the image write fails nothing is recorded.
+    @discardableResult
+    public func addVariant(itemID: UUID, graded: CGImage, analysis: SceneAnalysis) -> Bool {
+        guard let idx = items.firstIndex(where: { $0.id == itemID }) else { return false }
         let n = items[idx].variants.count
         let variantName = "\(itemID.uuidString)_v\(n).jpg"
-        writeJPEG(graded, to: variantName)
+
+        guard writeJPEG(graded, to: variantName) else {
+            Self.log.error("addVariant: variant write failed, aborting insert")
+            // Remove any partially-written file so it doesn't orphan on disk.
+            try? FileManager.default.removeItem(at: libraryURL(variantName))
+            return false
+        }
+
         let variant = GradeVariant(
             id: UUID(), createdAt: Date(), imageFilename: variantName,
             scene: analysis.scene.rawValue, lighting: analysis.lighting.rawValue,
@@ -142,6 +233,7 @@ public final class LibraryStore: ObservableObject {
         )
         items[idx].variants.append(variant)
         saveManifest()
+        return true
     }
 
     /// Remove an item and all of its image files.

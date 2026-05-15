@@ -14,8 +14,7 @@ public enum ImageEncoder {
         let scale = min(1.0, maxSide / longSide)
         let scaled = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
 
-        let ctx = CIContext(options: [.useSoftwareRenderer: false])
-        guard let cg = ctx.createCGImage(scaled, from: scaled.extent) else { return nil }
+        guard let cg = SharedCI.context.createCGImage(scaled, from: scaled.extent) else { return nil }
         let data = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(
             data, UTType.jpeg.identifier as CFString, 1, nil

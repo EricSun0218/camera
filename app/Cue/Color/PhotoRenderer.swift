@@ -13,15 +13,10 @@ public enum PhotoRendererError: Error {
 }
 
 public final class PhotoRenderer {
-    private let context: CIContext
+    /// Process-wide shared Core Image context (CIContext creation is expensive).
+    private var context: CIContext { SharedCI.context }
 
-    public init() {
-        self.context = CIContext(options: [
-            .useSoftwareRenderer: false,
-            .cacheIntermediates: false,
-            .name: "cue.renderer",
-        ])
-    }
+    public init() {}
 
     /// Render a CIImage to a JPEG `Data`.
     public func renderToJPEG(_ image: CIImage, quality: CGFloat = 0.92) throws -> Data {

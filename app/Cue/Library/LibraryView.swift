@@ -124,7 +124,7 @@ public struct LibraryView: View {
         let filename = item.latestVariant?.imageFilename
         ZStack {
             Rectangle().fill(Color.white.opacity(0.06))
-            if let filename, let cg = store.loadImage(filename) {
+            if let filename, let cg = store.loadThumbnail(filename, maxPixel: 400) {
                 Image(decorative: cg, scale: 1, orientation: .up)
                     .resizable()
                     .scaledToFill()

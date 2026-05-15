@@ -15,8 +15,6 @@ public struct EditorView: View {
     @State private var errorBanner: String?
     @State private var savedConfirmation = false
 
-    private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
-
     public init(store: LibraryStore, itemID: UUID,
                 backendClient: BackendClient, renderer: PhotoRenderer) {
         self.store = store
@@ -84,7 +82,7 @@ public struct EditorView: View {
 
     @ViewBuilder
     private var mainImage: some View {
-        if let filename = selectedFilename, let cg = store.loadImage(filename) {
+        if let filename = selectedFilename, let cg = store.loadThumbnail(filename, maxPixel: 2000) {
             Image(decorative: cg, scale: 1, orientation: .up)
                 .resizable()
                 .scaledToFit()
@@ -127,7 +125,7 @@ public struct EditorView: View {
             VStack(spacing: 4) {
                 ZStack {
                     Rectangle().fill(Color.white.opacity(0.06))
-                    if let cg = store.loadImage(filename) {
+                    if let cg = store.loadThumbnail(filename, maxPixel: 160) {
                         Image(decorative: cg, scale: 1, orientation: .up)
                             .resizable()
                             .scaledToFill()
@@ -236,7 +234,7 @@ public struct EditorView: View {
         do {
             let analysis = try await backendClient.grade(imageB64: b64)
             let graded = CIPipeline.apply(analysis.grade, to: originalCI)
-            guard let gradedCG = ciContext.createCGImage(graded, from: graded.extent) else {
+            guard let gradedCG = SharedCI.context.createCGImage(graded, from: graded.extent) else {
                 errorBanner = "Rendering the graded image failed."
                 isGrading = false
                 return

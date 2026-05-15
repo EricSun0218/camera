@@ -39,6 +39,12 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     private var alignedFrames: Int = 0
     private let alignedFramesNeeded = 9       // ~0.3 second at 30 fps
 
+    /// Watchdog that resets a stuck `.capturing` state if the photo callback never arrives.
+    private var captureWatchdog: Task<Void, Never>?
+    /// Bumped whenever a new flow starts; the 3s post-`.done` reset Task captures
+    /// this value and no-ops if it changed (user started a new flow within 3s).
+    private var flowGeneration = 0
+
     init() {
         camera.delegate = self
         camera.configure()
@@ -79,6 +85,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
             return
         }
         flowLog.info("requestGuidance: start")
+        flowGeneration += 1
         state = .analyzing
         let pixelBuffer = buf
         Task { @MainActor in
@@ -99,6 +106,13 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
                     flowLog.info("requestGuidance: state no longer .analyzing — user cancelled, dropping result")
                     return
                 }
+                // Genuine service failure — tell the truth, don't claim "no subject".
+                if g.degraded == true {
+                    flowLog.error("requestGuidance: backend returned degraded result")
+                    statusBanner = "AI service unavailable, try again"
+                    state = .idle
+                    return
+                }
                 self.guidance = g
                 applyZoom(g.suggestedZoom)
                 if g.subjectType == .empty {
@@ -108,6 +122,13 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
                         if statusBanner == "No subject detected" { statusBanner = nil }
                     }
                     state = .idle
+                    return
+                }
+                // The zoom ramp (camera.setZoom -> device.ramp) takes ~0.5s; wait
+                // for it to settle before scoring alignment IoU against a moving subject.
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                guard case .analyzing = state else {
+                    flowLog.info("requestGuidance: cancelled during zoom-ramp settle, dropping result")
                     return
                 }
                 self.state = .aligning(since: Date())
@@ -122,6 +143,30 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
 
     private func applyZoom(_ factor: Double) {
         camera.setZoom(CGFloat(max(1.0, min(factor, 3.0))))
+    }
+
+    // MARK: Capture watchdog
+
+    /// Start a watchdog: if a `capturePhoto` callback never arrives (camera
+    /// interruption), the UI is stuck at `.capturing` forever. After ~6s, if
+    /// state is STILL `.capturing`, recover to `.idle`.
+    private func startCaptureWatchdog() {
+        captureWatchdog?.cancel()
+        captureWatchdog = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            if case .capturing = self.state {
+                flowLog.error("captureWatchdog: photo callback never arrived — recovering to idle")
+                self.state = .idle
+                self.statusBanner = "Capture failed, try again"
+            }
+        }
+    }
+
+    /// Cancel the capture watchdog (the photo callback arrived).
+    private func cancelCaptureWatchdog() {
+        captureWatchdog?.cancel()
+        captureWatchdog = nil
     }
 
     // MARK: Alignment monitor (called from preview frame ingest)
@@ -150,19 +195,22 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
         guard let t = target else { return }
         let score = AlignmentChecker.score(target: t, state: compose)
         alignmentScore = score
-        if score >= 0.85 {
+        // 0.65 is realistic for a hand-held box vs an AI-placed box; require
+        // CONSECUTIVE aligned frames (reset to 0 on any frame below threshold).
+        if score >= 0.65 {
             alignedFrames += 1
             if alignedFrames >= alignedFramesNeeded {
                 triggerCapture()
             }
         } else {
-            alignedFrames = max(0, alignedFrames - 1)
+            alignedFrames = 0
         }
     }
 
     private func triggerCapture() {
         guard case .aligning = state else { return }
         state = .capturing
+        startCaptureWatchdog()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         // After alignment: lock focus + expose, settle ~400ms, then shutter.
         camera.captureWithAutofocus()
@@ -188,6 +236,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
 
     nonisolated func cameraDidFail(_ error: Error) {
         Task { @MainActor in
+            self.cancelCaptureWatchdog()
             self.statusBanner = "Camera error: \(error.localizedDescription)"
             self.state = .idle
         }
@@ -201,9 +250,11 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
             return  // genuinely mid-operation
         default:
             // idle / done / analyzing / aligning — shoot NOW, drop any in-flight guidance.
+            flowGeneration += 1
             guidance = .empty
             alignmentScore = 0
             state = .capturing
+            startCaptureWatchdog()
             camera.capture()
         }
     }
@@ -211,6 +262,8 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     // MARK: Capture pipeline
 
     private func process(captured: CIImage) async {
+        // The photo callback arrived — the capture watchdog is no longer needed.
+        cancelCaptureWatchdog()
         state = .grading
         let b64 = await Task.detached(priority: .userInitiated) {
             ImageEncoder.downsampledBase64(from: captured, maxSide: 1024, quality: 0.85)
@@ -226,6 +279,11 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
         } else {
             analysis = NeutralPreset.sceneAnalysis
         }
+        // Genuine grading-service failure: still save the photo, but tell the
+        // truth that it was saved without a grade.
+        if analysis.degraded == true {
+            statusBanner = "Color grading unavailable — saved without grading"
+        }
         let result = await Task.detached(priority: .userInitiated) { [renderer] in
             let graded = CIPipeline.apply(analysis.grade, to: captured)
             let originalCG = renderer.toCGImage(captured)
@@ -239,8 +297,12 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
             libraryStore.addCapture(original: before, graded: after, analysis: analysis)
         }
         state = .done
-        Task {
+        let generation = flowGeneration
+        Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
+            // If the user started a new flow within 3s, this Task is stale — no-op
+            // so it can't yank them out of the new flow.
+            guard generation == self.flowGeneration else { return }
             beforeAfter = nil
             guidance = .empty
             alignmentScore = 0
@@ -438,7 +500,6 @@ public struct RootView: View {
 
 private extension PhotoRenderer {
     func toCGImage(_ image: CIImage) -> CGImage? {
-        let ctx = CIContext(options: [.useSoftwareRenderer: false])
-        return ctx.createCGImage(image, from: image.extent)
+        SharedCI.context.createCGImage(image, from: image.extent)
     }
 }

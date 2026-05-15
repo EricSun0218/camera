@@ -20,12 +20,15 @@ public struct AIGuidance: Codable, Equatable, Sendable {
     public var targetH: Double?
     // Always
     public var suggestedZoom: Double
+    /// True when the backend returned a degraded result (service failure).
+    public var degraded: Bool?
 
     public static let empty = AIGuidance(
         subjectType: .empty,
         poseID: nil, poseX: nil, poseY: nil, poseHeight: nil,
         targetX: nil, targetY: nil, targetW: nil, targetH: nil,
-        suggestedZoom: 1.0
+        suggestedZoom: 1.0,
+        degraded: nil
     )
 
     public var posePlacement: (id: String, x: Double, y: Double, height: Double)? {
@@ -52,5 +55,6 @@ public struct AIGuidance: Codable, Equatable, Sendable {
         case targetW       = "target_w"
         case targetH       = "target_h"
         case suggestedZoom = "suggested_zoom"
+        case degraded      = "degraded"
     }
 }

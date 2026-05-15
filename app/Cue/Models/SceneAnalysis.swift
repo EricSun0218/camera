@@ -18,10 +18,21 @@ public struct SceneAnalysis: Codable, Equatable, Sendable {
     public var lighting: Lighting
     public var rationale: String
     public var grade: GradeParams
+    /// True when the backend returned a degraded result (color service failure).
+    public var degraded: Bool?
 
     public static let neutralFallback = SceneAnalysis(
         scene: .other, lighting: .mixed,
         rationale: "Default preset (network or analysis failed)",
-        grade: .neutral
+        grade: .neutral,
+        degraded: nil
     )
+
+    private enum CodingKeys: String, CodingKey {
+        case scene
+        case lighting
+        case rationale
+        case grade
+        case degraded = "degraded"
+    }
 }

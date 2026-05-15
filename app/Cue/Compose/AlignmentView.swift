@@ -15,9 +15,11 @@ public struct AlignmentView: View {
         self.target = target; self.current = current; self.alignment = alignment
     }
 
+    /// Green at the 0.65 auto-shutter threshold — the box turns green exactly
+    /// when alignment is good enough to fire.
     private var targetColor: Color {
-        if alignment >= 0.85 { return .green }
-        if alignment >= 0.5  { return .yellow }
+        if alignment >= 0.65 { return .green }
+        if alignment >= 0.4  { return .yellow }
         return .white
     }
 
@@ -32,9 +34,9 @@ public struct AlignmentView: View {
                 // target box — colored, solid, brackets, pulses when aligned
                 bracketRect(target, in: geo.size, color: targetColor,
                             lineWidth: 3, dashed: false)
-                    .scaleEffect(alignment >= 0.85 ? pulse : 1.0)
+                    .scaleEffect(alignment >= 0.65 ? pulse : 1.0)
                     .shadow(color: targetColor.opacity(0.7),
-                            radius: alignment >= 0.85 ? 14 : 5)
+                            radius: alignment >= 0.65 ? 14 : 5)
             }
         }
         .allowsHitTesting(false)
