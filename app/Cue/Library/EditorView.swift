@@ -150,19 +150,27 @@ public struct EditorView: View {
     // MARK: - Actions
 
     private var actionBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
+            // Download — export selected image to Camera Roll.
+            actionButton(icon: "square.and.arrow.down", label: "Download",
+                         tint: .white.opacity(0.12)) {
+                Task { await download() }
+            }
+            .disabled(isGrading)
+
+            // AI Grade — the hero action; press again to re-roll.
             Button(action: { Task { await regrade() } }) {
-                HStack(spacing: 6) {
+                VStack(spacing: 5) {
                     if isGrading {
-                        ProgressView().tint(.white)
+                        ProgressView().tint(.white).frame(height: 20)
                     } else {
-                        Image(systemName: "sparkles")
+                        Image(systemName: "sparkles").font(.system(size: 19))
                     }
                     Text(isGrading ? "Grading…" : "AI Grade")
+                        .font(.system(size: 12, weight: .semibold))
                 }
-                .font(.headline)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .padding(.vertical, 12)
                 .background(
                     LinearGradient(colors: [.cyan, .blue],
                                    startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -172,22 +180,38 @@ public struct EditorView: View {
             }
             .disabled(isGrading)
 
-            Button(action: { Task { await download() } }) {
-                HStack(spacing: 6) {
-                    Image(systemName: "square.and.arrow.down")
-                    Text("Download")
+            // Share — system share sheet for the selected image file.
+            if let filename = selectedFilename {
+                ShareLink(item: store.libraryURL(filename)) {
+                    actionLabel(icon: "square.and.arrow.up", label: "Share",
+                                tint: .white.opacity(0.12))
                 }
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(Color.white.opacity(0.12))
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .disabled(isGrading)
+            } else {
+                actionLabel(icon: "square.and.arrow.up", label: "Share",
+                            tint: .white.opacity(0.06))
+                    .opacity(0.4)
             }
-            .disabled(isGrading)
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
+    }
+
+    private func actionButton(icon: String, label: String, tint: Color,
+                              action: @escaping () -> Void) -> some View {
+        Button(action: action) { actionLabel(icon: icon, label: label, tint: tint) }
+    }
+
+    private func actionLabel(icon: String, label: String, tint: Color) -> some View {
+        VStack(spacing: 5) {
+            Image(systemName: icon).font(.system(size: 19))
+            Text(label).font(.system(size: 12, weight: .semibold))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(tint)
+        .foregroundStyle(.white)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     /// Grade the ORIGINAL image — pressing again re-rolls (backend temperature 0.7).
