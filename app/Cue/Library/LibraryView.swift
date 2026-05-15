@@ -9,6 +9,8 @@ public struct LibraryView: View {
     private let backendClient = BackendClient()
     private let renderer = PhotoRenderer()
 
+    @State private var toast: String?
+
     private let columns = [
         GridItem(.flexible(), spacing: 3),
         GridItem(.flexible(), spacing: 3),
@@ -36,10 +38,35 @@ public struct LibraryView: View {
                                 } label: {
                                     cell(for: item)
                                 }
+                                .contextMenu {
+                                    Button {
+                                        saveToPhotos(item)
+                                    } label: {
+                                        Label("Save to Photos", systemImage: "square.and.arrow.down")
+                                    }
+                                    Button(role: .destructive) {
+                                        store.delete(item.id)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
                             }
                         }
                         .padding(3)
                     }
+                }
+
+                if let toast {
+                    VStack {
+                        Spacer()
+                        Text(toast)
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 16).padding(.vertical, 10)
+                            .background(.black.opacity(0.8), in: Capsule())
+                            .padding(.bottom, 40)
+                    }
+                    .transition(.opacity)
                 }
             }
             .navigationTitle("Library")
@@ -55,6 +82,27 @@ public struct LibraryView: View {
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    /// Export the photo (latest graded variant) to the system Photos library.
+    private func saveToPhotos(_ item: LibraryItem) {
+        guard let filename = item.latestVariant?.imageFilename else { return }
+        Task {
+            do {
+                try await store.exportToPhotos(filename: filename)
+                showToast("Saved to Photos")
+            } catch {
+                showToast("Save failed")
+            }
+        }
+    }
+
+    private func showToast(_ message: String) {
+        withAnimation { toast = message }
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            withAnimation { if toast == message { toast = nil } }
+        }
     }
 
     private var emptyState: some View {
