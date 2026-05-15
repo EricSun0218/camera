@@ -33,9 +33,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     // Latest preview pixel buffer kept on MainActor for capture-frame use.
     private var latestPreview: CVPixelBuffer?
     private var alignedFrames: Int = 0
-    private var alignmentTimeoutTask: Task<Void, Never>?
-    private let alignedFramesNeeded = 30      // ~1 second at 30 fps
-    private let alignmentTimeoutSeconds: TimeInterval = 30
+    private let alignedFramesNeeded = 9       // ~0.3 second at 30 fps
 
     init() {
         camera.delegate = self
@@ -59,8 +57,6 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     }
 
     private func cancelGuidance() {
-        alignmentTimeoutTask?.cancel()
-        alignmentTimeoutTask = nil
         guidance = .empty
         alignmentScore = 0
         state = .idle
@@ -96,7 +92,6 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
                 }
                 self.state = .aligning(since: Date())
                 self.alignedFrames = 0
-                self.startAlignmentTimeout()
             } catch {
                 statusBanner = "AI 指导服务暂时不可达"
                 state = .idle
@@ -106,16 +101,6 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
 
     private func applyZoom(_ factor: Double) {
         camera.setZoom(CGFloat(max(1.0, min(factor, 3.0))))
-    }
-
-    private func startAlignmentTimeout() {
-        alignmentTimeoutTask?.cancel()
-        alignmentTimeoutTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(self.alignmentTimeoutSeconds * 1_000_000_000))
-            guard case .aligning = self.state else { return }
-            self.statusBanner = "对齐超时,可重试"
-            self.cancelGuidance()
-        }
     }
 
     // MARK: Alignment monitor (called from preview frame ingest)
@@ -156,7 +141,6 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
 
     private func triggerCapture() {
         guard case .aligning = state else { return }
-        alignmentTimeoutTask?.cancel()
         state = .capturing
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         // After alignment: lock focus + expose, settle ~400ms, then shutter.
