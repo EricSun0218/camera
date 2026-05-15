@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { SceneAnalysisSchema, neutralGrade } from '@/lib/schemas'
-import { COLORIST_SYSTEM_PROMPT_V1 } from '@/lib/prompts'
+import { COLORIST_SKILL } from '@/lib/colorist-skill'
 import { callVision, makeLLM, llmConfig } from '@/lib/llm'
 
 export const runtime = 'nodejs'
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     const raw = await callVision(
       makeLLM(cfg.apiKey, cfg.baseURL),
       {
-        system: COLORIST_SYSTEM_PROMPT_V1,
+        system: COLORIST_SKILL,
         imageB64: parse.data.image_b64,
         mediaType: 'image/jpeg',
         maxTokens: 1536,
