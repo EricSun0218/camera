@@ -4,6 +4,9 @@ import CoreImage
 import CoreGraphics
 import AVFoundation
 import UIKit
+import os
+
+private let flowLog = Logger(subsystem: "com.ericsun.cue", category: "flow")
 
 public enum FlowState: Equatable {
     case idle
@@ -64,7 +67,12 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     }
 
     private func requestGuidance() {
-        guard let buf = latestPreview else { return }
+        guard let buf = latestPreview else {
+            flowLog.error("requestGuidance: no preview frame available")
+            statusBanner = "相机预览未就绪"
+            return
+        }
+        flowLog.info("requestGuidance: start")
         state = .analyzing
         let pixelBuffer = buf
         Task { @MainActor in
@@ -72,13 +80,19 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
                 ImageEncoder.downsampledBase64(from: pixelBuffer, maxSide: 1024, quality: 0.7)
             }.value
             guard let b64 = b64Opt else {
+                flowLog.error("requestGuidance: image encode failed")
                 statusBanner = "图像编码失败"
                 state = .idle
                 return
             }
+            flowLog.info("requestGuidance: encoded \(b64.count) b64 chars, calling backend")
             do {
                 let g = try await client.guidance(imageB64: b64)
-                guard case .analyzing = state else { return }  // user cancelled
+                flowLog.info("requestGuidance: got guidance subject=\(g.subjectType.rawValue, privacy: .public) zoom=\(g.suggestedZoom)")
+                guard case .analyzing = state else {
+                    flowLog.info("requestGuidance: state no longer .analyzing — user cancelled, dropping result")
+                    return
+                }
                 self.guidance = g
                 applyZoom(g.suggestedZoom)
                 if g.subjectType == .empty {
@@ -93,7 +107,8 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
                 self.state = .aligning(since: Date())
                 self.alignedFrames = 0
             } catch {
-                statusBanner = "AI 指导服务暂时不可达"
+                flowLog.error("requestGuidance: backend failed — \(error.localizedDescription, privacy: .public)")
+                statusBanner = "AI 指导失败: \(error.localizedDescription)"
                 state = .idle
             }
         }
