@@ -196,11 +196,14 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
 
     func shutterTap() {
         switch state {
-        case .idle, .done:
+        case .capturing, .grading:
+            return  // genuinely mid-operation
+        default:
+            // idle / done / analyzing / aligning — shoot NOW, drop any in-flight guidance.
+            guidance = .empty
+            alignmentScore = 0
             state = .capturing
             camera.capture()
-        default:
-            break
         }
     }
 
@@ -327,8 +330,7 @@ public struct RootView: View {
 
     private var shutterButton: some View {
         Button(action: {
-            if case .aligning = vm.state { return }
-            if case .idle = vm.state { vm.shutterTap() }
+            vm.shutterTap()
         }) {
             ZStack {
                 Circle().stroke(Color.white, lineWidth: 4).frame(width: 76, height: 76)
