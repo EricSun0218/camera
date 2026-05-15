@@ -21,6 +21,10 @@ export async function POST(req: Request) {
   const parse = RequestBody.safeParse(await req.json().catch(() => ({})))
   if (!parse.success) return NextResponse.json({ error: 'bad_body' }, { status: 400 })
 
+  // Debug output is gated behind a server env flag — the client header alone
+  // must NOT expose raw LLM output to arbitrary callers.
+  const debugEnabled = process.env.DEBUG_ENDPOINTS === '1' && req.headers.get('x-debug') === '1'
+
   const neutralFallback = {
     scene: 'other' as const,
     lighting: 'mixed' as const,
@@ -42,13 +46,13 @@ export async function POST(req: Request) {
       cfg.model,
     )
     const ok = SceneAnalysisSchema.safeParse(raw)
-    if (!ok.success) return NextResponse.json(neutralFallback)
+    if (!ok.success) return NextResponse.json({ ...neutralFallback, degraded: true })
     return NextResponse.json(ok.data)
   } catch (e) {
     console.error('grade', e)
-    const debug = req.headers.get('x-debug') === '1'
+    const debug = debugEnabled
         ? { _debug: e instanceof Error ? `${e.name}: ${e.message}` : String(e) }
         : {}
-    return NextResponse.json({ ...neutralFallback, ...debug })
+    return NextResponse.json({ ...neutralFallback, degraded: true, ...debug })
   }
 }

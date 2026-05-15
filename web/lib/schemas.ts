@@ -40,6 +40,9 @@ export const SceneAnalysisSchema = z.object({
   // Cheap to widen here; UI truncates for display anyway.
   rationale: z.string().max(200),
   grade:     GradeParamsSchema,
+  // Set true only when the LLM service genuinely failed (exception / misconfig),
+  // so the client can distinguish a real failure from a real "neutral" grade.
+  degraded:  z.boolean().optional(),
 })
 
 export type SceneAnalysis = z.infer<typeof SceneAnalysisSchema>
@@ -80,6 +83,10 @@ export const AIGuidanceSchema = z.object({
 
   // Always — capped to common iPhone wide-cam range
   suggested_zoom: z.number().min(1).max(3).default(1),
+
+  // Set true only when the LLM service genuinely failed (exception / misconfig),
+  // so the client can distinguish a real failure from a real "no subject" result.
+  degraded: z.boolean().optional(),
 })
 
 export type AIGuidance = z.infer<typeof AIGuidanceSchema>

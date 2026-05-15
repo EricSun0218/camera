@@ -27,7 +27,9 @@ export async function POST(req: Request) {
   const parse = RequestBody.safeParse(await req.json().catch(() => ({})))
   if (!parse.success) return NextResponse.json({ error: 'bad_body' }, { status: 400 })
 
-  const debug = req.headers.get('x-debug') === '1'
+  // Debug output is gated behind a server env flag — the client header alone
+  // must NOT expose raw LLM output to arbitrary callers.
+  const debug = process.env.DEBUG_ENDPOINTS === '1' && req.headers.get('x-debug') === '1'
 
   try {
     const raw = await callVision(
@@ -46,13 +48,30 @@ export async function POST(req: Request) {
         debug ? { ...emptyResponse, _debug: { reason: 'schema_reject', raw, issues: ok.error.issues } } : emptyResponse
       )
     }
+    // Schema marks pose_*/target_* optional, so a `person`/`scene` response can
+    // pass Zod while missing the fields the iOS overlay needs. Treat such an
+    // incomplete (but not service-failed) response as a plain empty result.
+    const g = ok.data
+    const incomplete =
+      (g.subject_type === 'person' &&
+        (g.pose_id == null || g.pose_x == null || g.pose_y == null || g.pose_height == null)) ||
+      (g.subject_type === 'scene' &&
+        (g.target_x == null || g.target_y == null || g.target_w == null || g.target_h == null))
+    if (incomplete) {
+      return NextResponse.json(
+        debug ? { ...emptyResponse, _debug: { reason: 'incomplete_shape', raw } } : emptyResponse
+      )
+    }
     return NextResponse.json(
-      debug ? { ...ok.data, _debug: { reason: 'ok', raw } } : ok.data
+      debug ? { ...g, _debug: { reason: 'ok', raw } } : g
     )
   } catch (e) {
     console.error('guidance', e)
+    // Genuine service failure — flag degraded so the app can tell this apart
+    // from a real "no subject" empty result.
+    const failed = { ...emptyResponse, degraded: true }
     return NextResponse.json(
-      debug ? { ...emptyResponse, _debug: { reason: 'exception', error: String(e) } } : emptyResponse
+      debug ? { ...failed, _debug: { reason: 'exception', error: String(e) } } : failed
     )
   }
 }

@@ -93,10 +93,38 @@ describe('/api/guidance', () => {
     expect(body.subject_type).toBe('empty')
   })
 
-  it('returns empty fallback on thrown error', async () => {
+  it('returns empty fallback on thrown error with degraded flag', async () => {
     vi.mocked(llmModule.callVision).mockRejectedValue(new Error('boom'))
     const res = await guidancePOST(makeReq('/api/guidance', { image_b64: 'xx' }))
     expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body.subject_type).toBe('empty')
+    expect(body.degraded).toBe(true)
+  })
+
+  it('schema-reject empty fallback is NOT degraded', async () => {
+    vi.mocked(llmModule.callVision).mockResolvedValue({ wrong: true })
+    const res = await guidancePOST(makeReq('/api/guidance', { image_b64: 'xx' }))
+    const body = await res.json() as any
+    expect(body.subject_type).toBe('empty')
+    expect(body.degraded).toBeUndefined()
+  })
+
+  it('coerces incomplete person guidance (missing pose fields) to empty', async () => {
+    vi.mocked(llmModule.callVision).mockResolvedValue({
+      subject_type: 'person', suggested_zoom: 1,
+    })
+    const res = await guidancePOST(makeReq('/api/guidance', { image_b64: 'xx' }))
+    const body = await res.json() as any
+    expect(body.subject_type).toBe('empty')
+    expect(body.degraded).toBeUndefined()
+  })
+
+  it('coerces incomplete scene guidance (missing target fields) to empty', async () => {
+    vi.mocked(llmModule.callVision).mockResolvedValue({
+      subject_type: 'scene', target_x: 0.5, suggested_zoom: 1,
+    })
+    const res = await guidancePOST(makeReq('/api/guidance', { image_b64: 'xx' }))
     const body = await res.json() as any
     expect(body.subject_type).toBe('empty')
   })
@@ -131,11 +159,20 @@ describe('/api/grade', () => {
     expect(body.grade.exposure_ev).toBe(0)
   })
 
-  it('falls back to neutral grade on thrown error', async () => {
+  it('falls back to neutral grade on thrown error with degraded flag', async () => {
     vi.mocked(llmModule.callVision).mockRejectedValue(new Error('boom'))
     const res = await gradePOST(makeReq('/api/grade', { image_b64: 'xx' }))
     expect(res.status).toBe(200)
     const body = await res.json() as any
     expect(body.scene).toBe('other')
+    expect(body.degraded).toBe(true)
+  })
+
+  it('flags degraded on schema-reject fallback', async () => {
+    vi.mocked(llmModule.callVision).mockResolvedValue({ totally: 'wrong' })
+    const res = await gradePOST(makeReq('/api/grade', { image_b64: 'xx' }))
+    const body = await res.json() as any
+    expect(body.scene).toBe('other')
+    expect(body.degraded).toBe(true)
   })
 })

@@ -58,19 +58,67 @@ export async function callVision(
 
 function parseJsonLoose(text: string): unknown {
   const trimmed = text.trim()
-  // strip ```json ... ``` if present
-  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(trimmed)
-  const body = fenced ? fenced[1] : trimmed
+
+  // 1) First fenced ```json ... ``` block, even with prose before/after.
+  //    Non-anchored: an LLM reply that wraps the fence in commentary still parses.
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(trimmed)
+  if (fenced) {
+    const body = fenced[1].trim()
+    try {
+      return JSON.parse(body)
+    } catch {
+      // fall through to balanced-object scan below
+    }
+  }
+
+  // 2) No (parseable) fence — extract the first balanced top-level {...} object.
+  const obj = extractBalancedObject(trimmed)
+  if (obj !== null) {
+    try {
+      return JSON.parse(obj)
+    } catch {
+      // fall through to throw
+    }
+  }
+
+  // 3) Last resort — maybe the whole thing is bare JSON.
   try {
-    return JSON.parse(body)
+    return JSON.parse(trimmed)
   } catch {
-    throw new Error(`LLM response was not JSON: ${body.slice(0, 200)}`)
+    throw new Error(`LLM response was not JSON: ${trimmed.slice(0, 200)}`)
   }
 }
 
+/** Returns the first balanced `{...}` substring via a brace-matching scan, or null. */
+function extractBalancedObject(text: string): string | null {
+  const start = text.indexOf('{')
+  if (start === -1) return null
+  let depth = 0
+  let inStr = false
+  let escaped = false
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+    if (inStr) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inStr = false
+      continue
+    }
+    if (ch === '"') inStr = true
+    else if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) return text.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
 export function makeLLM(apiKey: string, baseURL: string): OpenAI {
-  // 60s timeout — vision via cross-border reseller proxies routinely take 10–40s.
-  return new OpenAI({ apiKey, baseURL, timeout: 60_000 })
+  // 50s timeout — vision via cross-border reseller proxies routinely take 10–40s.
+  // Kept strictly under the route's 60s `maxDuration` so the client aborts and
+  // the route's catch/fallback wins before Vercel kills the function with a 504.
+  return new OpenAI({ apiKey, baseURL, timeout: 50_000 })
 }
 
 /** Read env config in one place so routes don't have to. */
