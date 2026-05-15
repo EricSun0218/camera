@@ -46,6 +46,11 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     func start() { camera.start() }
     func stop()  { camera.stop() }
 
+    var isAnalyzing: Bool {
+        if case .analyzing = state { return true }
+        return false
+    }
+
     // MARK: AI guidance button
 
     func toggleAIGuidance() {
@@ -255,8 +260,12 @@ public struct RootView: View {
                 CameraPreviewView(session: vm.camera.session)
                     .ignoresSafeArea()
 
-                CompositionOverlay(state: vm.compose)
-                    .ignoresSafeArea()
+                // Composition aids hide during the loading animation for a clean
+                // "AI thinking" screen.
+                if !vm.isAnalyzing {
+                    CompositionOverlay(state: vm.compose)
+                        .ignoresSafeArea()
+                }
 
                 // AI guidance overlay (only while aligning)
                 Group {

@@ -3,8 +3,13 @@ import SwiftUI
 import Vision
 
 /// Always-on visual aids over the camera preview: rule-of-thirds grid, horizon line,
-/// saliency box, face boxes, and body-pose skeleton. **No text banners or tips** —
-/// AI guidance is surfaced via PoseOverlay / TargetFrame, not chatty captions.
+/// saliency box, face boxes. **No text banners or tips** — AI guidance is surfaced
+/// via PoseOverlay / TargetFrame, not chatty captions.
+///
+/// The on-device body-pose skeleton is detected (OnDeviceCV) but no longer DRAWN:
+/// the cyan stick figure was leftover passive-feedback clutter that competed with
+/// the loading animation and the pose silhouette. Detection still runs because
+/// AlignmentChecker needs `bodyPose.joints` for IoU.
 public struct CompositionOverlay: View {
     let state: ComposeState
     let showGrid: Bool
@@ -24,9 +29,6 @@ public struct CompositionOverlay: View {
                 }
                 ForEach(Array(state.faceBoxes.enumerated()), id: \.offset) { _, box in
                     boundingBox(box, in: geo.size, color: .green)
-                }
-                if state.bodyPose.confidence > 0.3 {
-                    skeleton(in: geo.size)
                 }
             }
         }
@@ -79,55 +81,5 @@ public struct CompositionOverlay: View {
             .stroke(color.opacity(0.9), lineWidth: 1.5)
             .frame(width: r.width, height: r.height)
             .position(x: r.midX, y: r.midY)
-    }
-
-    // MARK: pose skeleton
-
-    /// Edges to draw. Order from spec: head-shoulders-arms / spine / legs.
-    private static let skeletonEdges: [(VNHumanBodyPoseObservation.JointName, VNHumanBodyPoseObservation.JointName)] = [
-        // shoulders
-        (.leftShoulder, .rightShoulder),
-        // arms
-        (.leftShoulder, .leftElbow), (.leftElbow, .leftWrist),
-        (.rightShoulder, .rightElbow), (.rightElbow, .rightWrist),
-        // torso
-        (.leftShoulder, .leftHip), (.rightShoulder, .rightHip),
-        (.leftHip, .rightHip),
-        // legs
-        (.leftHip, .leftKnee), (.leftKnee, .leftAnkle),
-        (.rightHip, .rightKnee), (.rightKnee, .rightAnkle),
-        // head connections
-        (.nose, .leftEye), (.nose, .rightEye),
-        (.leftEye, .leftEar), (.rightEye, .rightEar),
-    ]
-
-    private func skeleton(in size: CGSize) -> some View {
-        let pose = state.bodyPose
-        func uiPoint(_ p: CGPoint) -> CGPoint {
-            // Vision normalized coords: origin bottom-left; flip Y for UIKit/SwiftUI.
-            CGPoint(x: p.x * size.width, y: (1 - p.y) * size.height)
-        }
-        return ZStack {
-            // bones
-            Path { path in
-                for (a, b) in Self.skeletonEdges {
-                    if let p = pose.joints[a], let q = pose.joints[b] {
-                        path.move(to: uiPoint(p))
-                        path.addLine(to: uiPoint(q))
-                    }
-                }
-            }
-            .stroke(Color.cyan.opacity(0.85), lineWidth: 2)
-            // joint dots
-            ForEach(Array(pose.joints.keys.enumerated()), id: \.offset) { _, name in
-                if let p = pose.joints[name] {
-                    let ui = uiPoint(p)
-                    Circle()
-                        .fill(Color.cyan)
-                        .frame(width: 6, height: 6)
-                        .position(x: ui.x, y: ui.y)
-                }
-            }
-        }
     }
 }
