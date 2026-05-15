@@ -1,15 +1,13 @@
 // app/Cue/Compose/CompositionOverlay.swift
 import SwiftUI
-import Vision
 
-/// Always-on visual aids over the camera preview: rule-of-thirds grid, horizon line,
-/// saliency box, face boxes. **No text banners or tips** — AI guidance is surfaced
-/// via the two-box AlignmentView while aligning, not chatty captions.
+/// Always-on visual aids over the camera preview: rule-of-thirds grid + horizon line.
 ///
-/// The on-device body-pose skeleton is detected (OnDeviceCV) but no longer DRAWN:
-/// the cyan stick figure was leftover passive-feedback clutter that competed with
-/// the loading animation and the pose silhouette. Detection still runs because
-/// AlignmentChecker needs `bodyPose.joints` for IoU.
+/// The on-device saliency box, face boxes, and body-pose skeleton are all still
+/// DETECTED by OnDeviceCV (AlignmentChecker needs them for IoU scoring) but no
+/// longer DRAWN here — they jittered every frame and were passive-feedback
+/// clutter on the idle camera screen. While aligning, the live subject is shown
+/// by AlignmentView's tracking box instead.
 public struct CompositionOverlay: View {
     let state: ComposeState
     let showGrid: Bool
@@ -24,12 +22,6 @@ public struct CompositionOverlay: View {
             ZStack {
                 if showGrid { gridLines.opacity(0.35) }
                 horizonLine
-                if let box = state.subjectBox {
-                    boundingBox(box, in: geo.size, color: .yellow)
-                }
-                ForEach(Array(state.faceBoxes.enumerated()), id: \.offset) { _, box in
-                    boundingBox(box, in: geo.size, color: .green)
-                }
             }
         }
         .allowsHitTesting(false)
@@ -67,19 +59,4 @@ public struct CompositionOverlay: View {
         }
     }
 
-    // MARK: bbox
-
-    private func boundingBox(_ norm: CGRect, in size: CGSize, color: Color) -> some View {
-        // Vision boxes are in [0,1] with origin at bottom-left.
-        let r = CGRect(
-            x: norm.minX * size.width,
-            y: (1 - norm.maxY) * size.height,
-            width: norm.width * size.width,
-            height: norm.height * size.height
-        )
-        return Rectangle()
-            .stroke(color.opacity(0.9), lineWidth: 1.5)
-            .frame(width: r.width, height: r.height)
-            .position(x: r.midX, y: r.midY)
-    }
 }

@@ -7,7 +7,6 @@ public struct EditorView: View {
     @ObservedObject var store: LibraryStore
     let itemID: UUID
     let backendClient: BackendClient
-    let renderer: PhotoRenderer
 
     /// nil = original selected; otherwise the selected variant id.
     @State private var selectedVariantID: UUID?
@@ -15,12 +14,10 @@ public struct EditorView: View {
     @State private var errorBanner: String?
     @State private var savedConfirmation = false
 
-    public init(store: LibraryStore, itemID: UUID,
-                backendClient: BackendClient, renderer: PhotoRenderer) {
+    public init(store: LibraryStore, itemID: UUID, backendClient: BackendClient) {
         self.store = store
         self.itemID = itemID
         self.backendClient = backendClient
-        self.renderer = renderer
     }
 
     private var item: LibraryItem? {

@@ -49,10 +49,5 @@ OUTPUT FORMAT: Strict JSON, NO prose, NO markdown fences:
   "suggested_zoom": <1..3>
 }`
 
-// The colorist prompt now lives in its own module — see lib/colorist-skill.ts.
+// The colorist prompt lives in its own module — see lib/colorist-skill.ts.
 // /api/grade imports COLORIST_SKILL directly from there.
-
-/** @deprecated old text-tip coach prompts (kept for backward import path safety) */
-export const COACH_SYSTEM_PROMPT_V3 = GUIDANCE_SYSTEM_PROMPT_V4
-export const COACH_SYSTEM_PROMPT_V2 = GUIDANCE_SYSTEM_PROMPT_V4
-export const COACH_SYSTEM_PROMPT_V1 = GUIDANCE_SYSTEM_PROMPT_V4

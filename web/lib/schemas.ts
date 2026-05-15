@@ -91,12 +91,6 @@ export const AIGuidanceSchema = z.object({
 
 export type AIGuidance = z.infer<typeof AIGuidanceSchema>
 
-/** @deprecated kept as alias during refactor */
-export const CoachTipSchema = AIGuidanceSchema
-
-/** @deprecated alias for AIGuidance */
-export type CoachTip = AIGuidance
-
 export function neutralGrade(): GradeParams {
   const flatBand = { hue: 0, saturation: 0, luminance: 0 }
   return {

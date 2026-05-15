@@ -7,7 +7,6 @@ public struct LibraryView: View {
     let dismiss: () -> Void
 
     private let backendClient = BackendClient()
-    private let renderer = PhotoRenderer()
 
     @State private var toast: String?
 
@@ -34,7 +33,7 @@ public struct LibraryView: View {
                             ForEach(store.items) { item in
                                 NavigationLink {
                                     EditorView(store: store, itemID: item.id,
-                                               backendClient: backendClient, renderer: renderer)
+                                               backendClient: backendClient)
                                 } label: {
                                     cell(for: item)
                                 }

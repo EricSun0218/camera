@@ -10,17 +10,8 @@ public struct BodyPose: Equatable {
     public var joints: [VNHumanBodyPoseObservation.JointName: CGPoint]
     /// Confidence-weighted overall body presence (0..1).
     public var confidence: Float
-    /// Shoulder slant in degrees (positive = right shoulder higher). nil if shoulders not detected.
-    public var shoulderSlantDegrees: Double?
-    /// Spine tilt in degrees off vertical (positive = leaning right). nil if hips+shoulders not detected.
-    public var spineTiltDegrees: Double?
-    /// Head tilt in degrees off vertical (positive = right ear lower). nil if ears not detected.
-    public var headTiltDegrees: Double?
 
-    public static let none = BodyPose(joints: [:], confidence: 0,
-                                       shoulderSlantDegrees: nil,
-                                       spineTiltDegrees: nil,
-                                       headTiltDegrees: nil)
+    public static let none = BodyPose(joints: [:], confidence: 0)
 }
 
 public struct ComposeState: Equatable {
@@ -119,46 +110,11 @@ public final class OnDeviceCV: ObservableObject {
                 for (name, p) in recognized where p.confidence > 0.3 {
                     joints[name] = p.location
                 }
-                let pose = Self.derivePose(from: joints, confidence: obs.confidence)
+                let pose = BodyPose(joints: joints, confidence: obs.confidence)
                 DispatchQueue.main.async { self?.state.bodyPose = pose }
             } catch {
                 DispatchQueue.main.async { self?.state.bodyPose = .none }
             }
         }
-    }
-
-    /// Compute slant/tilt summaries from key joints. nil for any axis where source joints are missing.
-    private static func derivePose(from joints: [VNHumanBodyPoseObservation.JointName: CGPoint],
-                                    confidence: Float) -> BodyPose {
-        func degrees(from a: CGPoint, to b: CGPoint) -> Double {
-            atan2(Double(b.y - a.y), Double(b.x - a.x)) * 180.0 / .pi
-        }
-        // Shoulder slant: angle of line right-shoulder → left-shoulder relative to horizontal.
-        // Positive value when right shoulder is higher than left.
-        var shoulderSlant: Double?
-        if let l = joints[.leftShoulder], let r = joints[.rightShoulder] {
-            shoulderSlant = degrees(from: l, to: r)
-        }
-        // Spine tilt: angle of line midHip → midShoulder relative to vertical.
-        var spineTilt: Double?
-        if let lh = joints[.leftHip], let rh = joints[.rightHip],
-           let ls = joints[.leftShoulder], let rs = joints[.rightShoulder] {
-            let mh = CGPoint(x: (lh.x + rh.x) / 2, y: (lh.y + rh.y) / 2)
-            let ms = CGPoint(x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2)
-            let raw = degrees(from: mh, to: ms)  // 90° = perfectly upright in image coords
-            spineTilt = raw - 90.0
-        }
-        // Head tilt from ear-to-ear line (positive = right ear lower than left).
-        var headTilt: Double?
-        if let le = joints[.leftEar], let re = joints[.rightEar] {
-            headTilt = degrees(from: le, to: re)
-        }
-        return BodyPose(
-            joints: joints,
-            confidence: confidence,
-            shoulderSlantDegrees: shoulderSlant,
-            spineTiltDegrees: spineTilt,
-            headTiltDegrees: headTilt
-        )
     }
 }

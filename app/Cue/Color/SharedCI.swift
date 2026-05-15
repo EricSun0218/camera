@@ -5,4 +5,9 @@ import CoreImage
 /// never create one per render call.
 public enum SharedCI {
     public static let context = CIContext(options: [.useSoftwareRenderer: false])
+
+    /// Render a CIImage to a CGImage using the shared context.
+    public static func cgImage(from image: CIImage) -> CGImage? {
+        context.createCGImage(image, from: image.extent)
+    }
 }

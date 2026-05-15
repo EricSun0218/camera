@@ -31,7 +31,6 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     let camera = CameraSession()
     let cv = OnDeviceCV()
     let client = BackendClient()
-    let renderer = PhotoRenderer()
     let libraryStore = LibraryStore()
 
     // Latest preview pixel buffer kept on MainActor for capture-frame use.
@@ -284,10 +283,10 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
         if analysis.degraded == true {
             statusBanner = "Color grading unavailable — saved without grading"
         }
-        let result = await Task.detached(priority: .userInitiated) { [renderer] in
+        let result = await Task.detached(priority: .userInitiated) {
             let graded = CIPipeline.apply(analysis.grade, to: captured)
-            let originalCG = renderer.toCGImage(captured)
-            let gradedCG   = renderer.toCGImage(graded)
+            let originalCG = SharedCI.cgImage(from: captured)
+            let gradedCG   = SharedCI.cgImage(from: graded)
             return (originalCG, gradedCG)
         }.value
         if let before = result.0, let after = result.1 {
@@ -495,11 +494,5 @@ public struct RootView: View {
         case .analyzing, .aligning: return "xmark"
         default: return "sparkles"
         }
-    }
-}
-
-private extension PhotoRenderer {
-    func toCGImage(_ image: CIImage) -> CGImage? {
-        SharedCI.context.createCGImage(image, from: image.extent)
     }
 }
