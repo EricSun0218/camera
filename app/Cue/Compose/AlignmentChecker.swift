@@ -23,21 +23,28 @@ public enum AlignmentChecker {
     /// - For .scene: use the saliency box.
     /// Vision boxes come in normalized BOTTOM-LEFT origin; we convert.
     public static func score(target: AlignmentTarget, state: ComposeState) -> Double {
-        let detected: CGRect?
-        switch target.kind {
+        guard let d = detectedBox(kind: target.kind, state: state) else { return 0 }
+        return iou(d, target.box)
+    }
+
+    /// The live-detected subject box in normalized [0..1] TOP-LEFT viewfinder space.
+    /// - For .person: body pose joints bounding box, or first face box as fallback.
+    /// - For .scene: the saliency box.
+    /// Returns nil when no subject is detected. This is the same box the scorer
+    /// uses for IoU, so the UI can draw exactly what the scorer measures.
+    public static func detectedBox(kind: SubjectKind, state: ComposeState) -> CGRect? {
+        switch kind {
         case .person:
             if let pose = boundingBox(of: state.bodyPose.joints) {
-                detected = pose
+                return pose
             } else if let face = state.faceBoxes.first {
-                detected = visionToTopLeft(face)
+                return visionToTopLeft(face)
             } else {
-                detected = nil
+                return nil
             }
         case .scene:
-            detected = state.subjectBox.map(visionToTopLeft)
+            return state.subjectBox.map(visionToTopLeft)
         }
-        guard let d = detected else { return 0 }
-        return iou(d, target.box)
     }
 
     private static func boundingBox(of joints: [VNHumanBodyPoseObservation.JointName: CGPoint]) -> CGRect? {

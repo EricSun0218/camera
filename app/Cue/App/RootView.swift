@@ -274,20 +274,12 @@ public struct RootView: View {
                         .ignoresSafeArea()
                 }
 
-                // AI guidance overlay (only while aligning)
-                Group {
-                    if case .aligning = vm.state {
-                        if let p = vm.guidance.posePlacement,
-                           let t = PoseLibrary.templates.first(where: { $0.id == p.id }) {
-                            PoseOverlay(template: t, positionX: p.x, positionY: p.y,
-                                        heightFraction: p.height, alignment: vm.alignmentScore)
-                                .ignoresSafeArea()
-                                .id(p.id)
-                        } else if let rect = vm.guidance.sceneTarget {
-                            TargetFrame(target: rect, alignment: vm.alignmentScore)
-                                .ignoresSafeArea()
-                        }
-                    }
+                // AI guidance overlay (only while aligning): two-box alignment guide.
+                if case .aligning = vm.state, let target = alignmentTargetRect {
+                    AlignmentView(target: target,
+                                  current: alignmentCurrentRect,
+                                  alignment: vm.alignmentScore)
+                        .ignoresSafeArea()
                 }
 
                 if case .analyzing = vm.state {
@@ -326,6 +318,28 @@ public struct RootView: View {
         case .capturing, .grading: return true
         default: return false
         }
+    }
+
+    /// Subject kind for the current AI guidance.
+    private var alignmentKind: SubjectKind {
+        vm.guidance.subjectType == .person ? .person : .scene
+    }
+
+    /// AI-placed, screen-fixed target box, normalized 0..1 top-left. nil if no guidance.
+    private var alignmentTargetRect: CGRect? {
+        let g = vm.guidance
+        if let p = g.posePlacement {
+            let aspect = PoseLibrary.templates.first(where: { $0.id == p.id })?.aspect ?? 2.4
+            let h = p.height
+            let w = h / aspect
+            return CGRect(x: p.x - w/2, y: p.y - h/2, width: w, height: h)
+        }
+        return g.sceneTarget
+    }
+
+    /// Live-detected subject box, normalized 0..1 top-left. nil if no subject detected.
+    private var alignmentCurrentRect: CGRect? {
+        AlignmentChecker.detectedBox(kind: alignmentKind, state: vm.compose)
     }
 
     private var shutterButton: some View {

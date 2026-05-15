@@ -4,7 +4,7 @@ import Vision
 
 /// Always-on visual aids over the camera preview: rule-of-thirds grid, horizon line,
 /// saliency box, face boxes. **No text banners or tips** — AI guidance is surfaced
-/// via PoseOverlay / TargetFrame, not chatty captions.
+/// via the two-box AlignmentView while aligning, not chatty captions.
 ///
 /// The on-device body-pose skeleton is detected (OnDeviceCV) but no longer DRAWN:
 /// the cyan stick figure was leftover passive-feedback clutter that competed with
