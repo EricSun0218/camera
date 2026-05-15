@@ -2,10 +2,15 @@
 import SwiftUI
 
 /// Renders a translucent pose silhouette on top of the camera preview.
-/// **Non-interactive by design** — the LLM Coach picks the pose AND its on-screen
+/// **Non-interactive by design** — the LLM picks the pose AND its on-screen
 /// placement (composition-aware: rule of thirds, headroom, negative space).
 /// The silhouette is screen-fixed, so as the user moves the phone, the real subject
-/// in frame can be aligned with the outline — pose and composition guided together.
+/// in frame can be aligned with the outline.
+///
+/// Color reflects live IoU alignment with the detected subject:
+///   white  (alignment < 0.5)   – far from target
+///   yellow (0.5 ≤ alignment < 0.85) – close
+///   green  (alignment ≥ 0.85)  – locked in, pulses
 public struct PoseOverlay: View {
     public let template: PoseTemplate
     /// Normalized 0..1 horizontal screen position of the silhouette CENTER.
@@ -14,17 +19,27 @@ public struct PoseOverlay: View {
     public let positionY: Double
     /// Silhouette height as fraction of viewfinder height (0.3..0.95).
     public let heightFraction: Double
+    /// 0..1 alignment score from AlignmentChecker.
+    public let alignment: Double
 
-    private let opacity: Double = 0.55
+    @State private var pulse: Double = 1.0
 
     public init(template: PoseTemplate,
                 positionX: Double = 0.5,
                 positionY: Double = 0.55,
-                heightFraction: Double = 0.72) {
+                heightFraction: Double = 0.72,
+                alignment: Double = 0) {
         self.template = template
         self.positionX = positionX
         self.positionY = positionY
         self.heightFraction = heightFraction
+        self.alignment = alignment
+    }
+
+    private var color: Color {
+        if alignment >= 0.85 { return .green }
+        if alignment >= 0.5  { return .yellow }
+        return .white
     }
 
     public var body: some View {
@@ -38,15 +53,22 @@ public struct PoseOverlay: View {
                 .resizable()
                 .scaledToFit()
                 .symbolRenderingMode(.monochrome)
-                .foregroundStyle(Color.white)
+                .foregroundStyle(color)
                 .frame(width: width, height: height)
-                .shadow(color: .white.opacity(0.85), radius: 6)
-                .shadow(color: .white.opacity(0.45), radius: 14)
-                .opacity(opacity)
+                .shadow(color: color.opacity(0.9), radius: 8)
+                .shadow(color: color.opacity(0.55), radius: 18)
+                .opacity(0.65)
+                .scaleEffect(alignment >= 0.85 ? pulse : 1.0)
                 .position(x: cx, y: cy)
+                .animation(.easeInOut(duration: 0.35), value: color)
                 .animation(.easeInOut(duration: 0.35), value: cx)
                 .animation(.easeInOut(duration: 0.35), value: cy)
                 .animation(.easeInOut(duration: 0.35), value: height)
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                        pulse = 1.06
+                    }
+                }
         }
         .allowsHitTesting(false)
     }
