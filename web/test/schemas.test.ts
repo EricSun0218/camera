@@ -52,10 +52,16 @@ describe('SceneAnalysisSchema', () => {
     })).toThrow()
   })
 
-  it('rejects rationale > 120', () => {
+  it('rejects rationale > 200', () => {
     expect(() => SceneAnalysisSchema.parse({
-      scene: 'portrait', lighting: 'harsh_sun', rationale: 'x'.repeat(121), grade: neutralGrade(),
+      scene: 'portrait', lighting: 'harsh_sun', rationale: 'x'.repeat(201), grade: neutralGrade(),
     })).toThrow()
+  })
+
+  it('accepts rationale up to 200 (Gemini can hit ~150)', () => {
+    expect(() => SceneAnalysisSchema.parse({
+      scene: 'portrait', lighting: 'harsh_sun', rationale: 'x'.repeat(180), grade: neutralGrade(),
+    })).not.toThrow()
   })
 
   it('accepts a complete valid payload', () => {
