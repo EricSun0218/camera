@@ -91,6 +91,42 @@ public final class CameraSession: NSObject {
         }
     }
 
+    /// Lock autofocus + auto-exposure at the screen center, wait briefly for the
+    /// focus to settle, then fire the shutter. Used by the auto-align flow so the
+    /// captured frame is sharp even right after a zoom ramp.
+    public func captureWithAutofocus() {
+        sessionQueue.async { [weak self] in
+            guard let self, let device = self.videoDeviceInput?.device else { return }
+            let center = CGPoint(x: 0.5, y: 0.5)
+            do {
+                try device.lockForConfiguration()
+                if device.isFocusPointOfInterestSupported {
+                    device.focusPointOfInterest = center
+                    if device.isFocusModeSupported(.autoFocus) {
+                        device.focusMode = .autoFocus
+                    }
+                }
+                if device.isExposurePointOfInterestSupported {
+                    device.exposurePointOfInterest = center
+                    if device.isExposureModeSupported(.autoExpose) {
+                        device.exposureMode = .autoExpose
+                    }
+                }
+                device.unlockForConfiguration()
+            } catch {
+                // best-effort; fall through to capture without locked focus
+            }
+            // Give AF/AE ~400ms to settle (covers zoom-ramp + AF convergence on iPhone 14+).
+            self.sessionQueue.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard let self else { return }
+                let settings = AVCapturePhotoSettings()
+                settings.photoQualityPrioritization = .quality
+                settings.flashMode = .auto
+                self.photoOutput.capturePhoto(with: settings, delegate: self)
+            }
+        }
+    }
+
     /// Ramp the active device's videoZoomFactor. Clamped to [1.0, min(activeFormat.max, 3.0)].
     public func setZoom(_ factor: CGFloat) {
         sessionQueue.async { [weak self] in

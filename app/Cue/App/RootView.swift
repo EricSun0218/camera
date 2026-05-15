@@ -22,6 +22,8 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     @Published var alignmentScore: Double = 0
     @Published var beforeAfter: (before: CGImage, after: CGImage)?
     @Published var statusBanner: String?
+    /// Most recently graded photo, shown as thumbnail on the gallery button.
+    @Published var lastThumbnail: CGImage?
 
     let camera = CameraSession()
     let cv = OnDeviceCV()
@@ -157,7 +159,8 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
         alignmentTimeoutTask?.cancel()
         state = .capturing
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        camera.capture()
+        // After alignment: lock focus + expose, settle ~400ms, then shutter.
+        camera.captureWithAutofocus()
     }
 
     // MARK: CameraSessionDelegate
@@ -224,6 +227,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
         }.value
         if let before = result.0, let after = result.1 {
             beforeAfter = (before, after)
+            lastThumbnail = after
         }
         if let jpeg = result.2 {
             do { try await renderer.saveToPhotoLibrary(jpeg) }
@@ -287,13 +291,12 @@ public struct RootView: View {
                             .foregroundStyle(.white).padding(.top, 60)
                     }
                     Spacer()
-                    HStack {
-                        Spacer().frame(maxWidth: .infinity)
+                    HStack(spacing: 0) {
+                        galleryButton.frame(maxWidth: .infinity)
                         shutterButton
-                        Spacer().frame(maxWidth: .infinity)
-                        aiButton
+                        aiButton.frame(maxWidth: .infinity)
                     }
-                    .padding(.horizontal, 28)
+                    .padding(.horizontal, 36)
                     .padding(.bottom, 28)
                 }
                 .ignoresSafeArea(edges: .top)
@@ -336,6 +339,35 @@ public struct RootView: View {
                     .font(.system(size: 22, weight: .medium))
                     .foregroundStyle(.white)
             }
+        }
+        .disabled(isBusy)
+    }
+
+    private var galleryButton: some View {
+        Button(action: {
+            // Open the iOS Photos app (cheapest viable v1).
+            // PHPicker / in-app gallery is a v2 polish.
+            if let url = URL(string: "photos-redirect://") {
+                UIApplication.shared.open(url)
+            }
+        }) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.white.opacity(0.85), lineWidth: 1.6)
+                    .frame(width: 48, height: 48)
+                if let last = vm.lastThumbnail {
+                    Image(decorative: last, scale: 1, orientation: .up)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 44, height: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                } else {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.95))
+                }
+            }
+            .shadow(color: .black.opacity(0.4), radius: 6)
         }
         .disabled(isBusy)
     }
