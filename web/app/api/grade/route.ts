@@ -36,6 +36,8 @@ export async function POST(req: Request) {
         imageB64: parse.data.image_b64,
         mediaType: 'image/jpeg',
         maxTokens: 1536,
+        // >0 so the editor's "Retry" yields a fresh take instead of an identical grade.
+        temperature: 0.7,
       },
       cfg.model,
     )

@@ -24,6 +24,8 @@ type CallArgs = {
   imageB64: string
   mediaType: 'image/jpeg' | 'image/png'
   maxTokens?: number
+  /** 0 = deterministic. The grade route uses >0 so "retry" yields a fresh take. */
+  temperature?: number
 }
 
 export async function callVision(
@@ -35,7 +37,7 @@ export async function callVision(
   const resp = await client.chat.completions.create({
     model,
     max_tokens: args.maxTokens ?? 1024,
-    temperature: 0,
+    temperature: args.temperature ?? 0,
     messages: [
       { role: 'system', content: args.system },
       {
