@@ -91,6 +91,21 @@ public final class CameraSession: NSObject {
         }
     }
 
+    /// Ramp the active device's videoZoomFactor. Clamped to [1.0, min(activeFormat.max, 3.0)].
+    public func setZoom(_ factor: CGFloat) {
+        sessionQueue.async { [weak self] in
+            guard let self, let device = self.videoDeviceInput?.device else { return }
+            let clamped = max(1.0, min(factor, min(device.activeFormat.videoMaxZoomFactor, 3.0)))
+            do {
+                try device.lockForConfiguration()
+                device.ramp(toVideoZoomFactor: clamped, withRate: 4.0)
+                device.unlockForConfiguration()
+            } catch {
+                // best-effort; ignore
+            }
+        }
+    }
+
     public static func requestAuthorization() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized: return true
