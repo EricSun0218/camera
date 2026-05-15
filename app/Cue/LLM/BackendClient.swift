@@ -18,8 +18,10 @@ public final class BackendClient {
 
     public init() {}
 
-    public func coach(imageB64: String) async throws -> CoachTip {
-        try await post(path: "/api/coach", imageB64: imageB64, timeout: 1.5, as: CoachTip.self)
+    /// AI guidance call: returns suggested pose/scene target + zoom for current viewfinder.
+    /// Backend can take up to 60 s.
+    public func guidance(imageB64: String) async throws -> AIGuidance {
+        try await post(path: "/api/guidance", imageB64: imageB64, timeout: 60.0, as: AIGuidance.self)
     }
 
     public func grade(imageB64: String) async throws -> SceneAnalysis {
