@@ -1,25 +1,62 @@
 import { describe, it, expect } from 'vitest'
-import { GradeParamsSchema, SceneAnalysisSchema, CoachTipSchema, neutralGrade } from '../lib/schemas'
+import {
+  GradeParamsSchema, SceneAnalysisSchema,
+  AIGuidanceSchema, POSE_IDS,
+  neutralGrade,
+} from '../lib/schemas'
 
-describe('CoachTipSchema', () => {
-  it('accepts a tip with length <= 80', () => {
-    expect(CoachTipSchema.parse({ tip: 'step left', priority: 'med' })).toEqual({
-      tip: 'step left', priority: 'med',
+describe('AIGuidanceSchema', () => {
+  it('accepts empty subject', () => {
+    expect(AIGuidanceSchema.parse({ subject_type: 'empty', suggested_zoom: 1 }))
+      .toEqual({ subject_type: 'empty', suggested_zoom: 1 })
+  })
+
+  it('accepts person mode with pose placement', () => {
+    const r = AIGuidanceSchema.parse({
+      subject_type: 'person',
+      pose_id: 'stand', pose_x: 0.67, pose_y: 0.55, pose_height: 0.72,
+      suggested_zoom: 1.5,
     })
+    expect(r.pose_id).toBe('stand')
   })
 
-  it('accepts null tip', () => {
-    expect(CoachTipSchema.parse({ tip: null, priority: 'low' })).toEqual({
-      tip: null, priority: 'low',
+  it('accepts scene mode with target box', () => {
+    const r = AIGuidanceSchema.parse({
+      subject_type: 'scene',
+      target_x: 0.5, target_y: 0.55, target_w: 0.7, target_h: 0.5,
+      suggested_zoom: 1.8,
     })
+    expect(r.target_w).toBe(0.7)
   })
 
-  it('rejects tip > 80 chars', () => {
-    expect(() => CoachTipSchema.parse({ tip: 'x'.repeat(81), priority: 'med' })).toThrow()
+  it('rejects invalid subject_type', () => {
+    expect(() => AIGuidanceSchema.parse({ subject_type: 'underwater', suggested_zoom: 1 })).toThrow()
   })
 
-  it('rejects invalid priority', () => {
-    expect(() => CoachTipSchema.parse({ tip: 'x', priority: 'urgent' })).toThrow()
+  it('rejects suggested_zoom out of range', () => {
+    expect(() => AIGuidanceSchema.parse({ subject_type: 'empty', suggested_zoom: 5 })).toThrow()
+  })
+
+  it('rejects unknown pose_id', () => {
+    expect(() => AIGuidanceSchema.parse({
+      subject_type: 'person', pose_id: 'flying', pose_x: 0.5, pose_y: 0.5, pose_height: 0.5, suggested_zoom: 1,
+    })).toThrow()
+  })
+
+  it('defaults suggested_zoom to 1 if missing', () => {
+    const r = AIGuidanceSchema.parse({ subject_type: 'empty' })
+    expect(r.suggested_zoom).toBe(1)
+  })
+
+  it('pose_id can be null (person frame OK as-is, no overlay needed)', () => {
+    const r = AIGuidanceSchema.parse({ subject_type: 'person', pose_id: null, suggested_zoom: 1 })
+    expect(r.pose_id).toBeNull()
+  })
+
+  it('POSE_IDS export is the canonical list iOS depends on', () => {
+    expect(POSE_IDS).toContain('stand')
+    expect(POSE_IDS).toContain('arms_open')
+    expect(POSE_IDS.length).toBe(8)
   })
 })
 

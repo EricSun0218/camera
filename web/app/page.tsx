@@ -7,7 +7,7 @@ export default function Page() {
         <a href="https://github.com/EricSun0218/cue">GitHub</a> for the iOS client.
       </p>
       <ul>
-        <li><code>POST /api/coach</code></li>
+        <li><code>POST /api/guidance</code></li>
         <li><code>POST /api/grade</code></li>
         <li><code>GET /api/health</code></li>
       </ul>

@@ -49,20 +49,46 @@ export const POSE_IDS = [
   'stand', 'arms_open', 'walk', 'wave', 'yoga', 'mind_body', 'dance', 'child_lift',
 ] as const
 
-export const CoachTipSchema = z.object({
-  tip:      z.string().max(80).nullable(),
-  priority: z.enum(['low','med','high']),
-  // AI-picked pose silhouette to show, or null/omitted for no overlay.
-  pose_id:  z.enum(POSE_IDS).nullable().optional(),
-  // Composition-aware placement on the viewfinder, normalized 0..1.
-  // Origin top-left. Center of the silhouette sits at (pose_x, pose_y).
+/**
+ * AI guidance — on-demand, one-shot. Returned by /api/guidance.
+ *
+ * Two modes by subject:
+ *   - person   : show pose silhouette at (pose_x, pose_y), height pose_height
+ *   - scene    : show target framing box (target_x/y/w/h)
+ *   - empty    : no main subject — UI hides overlay
+ *
+ * Always: suggested_zoom in [1, 3]. iOS applies this to AVCaptureDevice.videoZoomFactor
+ * immediately when the guidance appears, then the user moves the phone until the live
+ * subject overlaps the target. On-device IoU monitor triggers auto-shutter once aligned.
+ *
+ * No text fields — all guidance is visual, driven by UI overlays.
+ */
+export const AIGuidanceSchema = z.object({
+  subject_type: z.enum(['person', 'scene', 'empty']),
+
+  // Person mode
+  pose_id:     z.enum(POSE_IDS).nullable().optional(),
   pose_x:      z.number().min(0).max(1).optional(),
   pose_y:      z.number().min(0).max(1).optional(),
-  // Silhouette height as a fraction of viewfinder height. Wider/taller frames make this smaller.
   pose_height: z.number().min(0.3).max(0.95).optional(),
+
+  // Scene mode — target bounding box for the main subject
+  target_x: z.number().min(0).max(1).optional(),
+  target_y: z.number().min(0).max(1).optional(),
+  target_w: z.number().min(0.1).max(1).optional(),
+  target_h: z.number().min(0.1).max(1).optional(),
+
+  // Always — capped to common iPhone wide-cam range
+  suggested_zoom: z.number().min(1).max(3).default(1),
 })
 
-export type CoachTip = z.infer<typeof CoachTipSchema>
+export type AIGuidance = z.infer<typeof AIGuidanceSchema>
+
+/** @deprecated kept as alias during refactor */
+export const CoachTipSchema = AIGuidanceSchema
+
+/** @deprecated alias for AIGuidance */
+export type CoachTip = AIGuidance
 
 export function neutralGrade(): GradeParams {
   const flatBand = { hue: 0, saturation: 0, luminance: 0 }

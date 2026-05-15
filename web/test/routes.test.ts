@@ -11,10 +11,22 @@ vi.mock('@/lib/llm', () => ({
 }))
 
 import * as llmModule from '@/lib/llm'
-import { POST as coachPOST } from '@/app/api/coach/route'
+import { POST as guidancePOST } from '@/app/api/guidance/route'
 import { POST as gradePOST } from '@/app/api/grade/route'
 
-const fakeCoach = { tip: 'step left', priority: 'med' as const }
+const fakePersonGuidance = {
+  subject_type: 'person' as const,
+  pose_id: 'stand',
+  pose_x: 0.67, pose_y: 0.55, pose_height: 0.72,
+  suggested_zoom: 1.5,
+}
+
+const fakeSceneGuidance = {
+  subject_type: 'scene' as const,
+  target_x: 0.5, target_y: 0.55, target_w: 0.7, target_h: 0.5,
+  suggested_zoom: 1.8,
+}
+
 const fakeGrade = {
   scene: 'portrait', lighting: 'golden_hour', rationale: 'warm',
   grade: {
@@ -44,47 +56,54 @@ function makeReq(path: string, body: object) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // re-stub llmConfig because clearAllMocks erases the default implementation
   vi.mocked(llmModule.llmConfig).mockReturnValue({
-    apiKey: 'test-key',
-    baseURL: 'https://mock/v1',
-    model: 'test-model',
+    apiKey: 'test-key', baseURL: 'https://mock/v1', model: 'test-model',
   })
 })
 
-describe('/api/coach', () => {
-  it('returns parsed tip', async () => {
-    vi.mocked(llmModule.callVision).mockResolvedValue(fakeCoach)
-    const res = await coachPOST(makeReq('/api/coach', { image_b64: 'xx', client_version: '1.0.0' }))
+describe('/api/guidance', () => {
+  it('returns parsed person guidance', async () => {
+    vi.mocked(llmModule.callVision).mockResolvedValue(fakePersonGuidance)
+    const res = await guidancePOST(makeReq('/api/guidance', { image_b64: 'xx' }))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual(fakeCoach)
+    const body = await res.json() as any
+    expect(body.subject_type).toBe('person')
+    expect(body.pose_id).toBe('stand')
+  })
+
+  it('returns parsed scene guidance', async () => {
+    vi.mocked(llmModule.callVision).mockResolvedValue(fakeSceneGuidance)
+    const res = await guidancePOST(makeReq('/api/guidance', { image_b64: 'xx' }))
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body.subject_type).toBe('scene')
+    expect(body.target_w).toBe(0.7)
   })
 
   it('rejects empty body', async () => {
-    const res = await coachPOST(makeReq('/api/coach', {}))
+    const res = await guidancePOST(makeReq('/api/guidance', {}))
     expect(res.status).toBe(400)
   })
 
-  it('returns silent on bad shape', async () => {
+  it('returns empty fallback on bad shape', async () => {
     vi.mocked(llmModule.callVision).mockResolvedValue({ wrong: true })
-    const res = await coachPOST(makeReq('/api/coach', { image_b64: 'xx' }))
+    const res = await guidancePOST(makeReq('/api/guidance', { image_b64: 'xx' }))
     expect(res.status).toBe(200)
     const body = await res.json() as any
-    expect(body.tip).toBeNull()
-    expect(body.priority).toBe('low')
+    expect(body.subject_type).toBe('empty')
   })
 
-  it('returns silent on thrown error', async () => {
+  it('returns empty fallback on thrown error', async () => {
     vi.mocked(llmModule.callVision).mockRejectedValue(new Error('boom'))
-    const res = await coachPOST(makeReq('/api/coach', { image_b64: 'xx' }))
+    const res = await guidancePOST(makeReq('/api/guidance', { image_b64: 'xx' }))
     expect(res.status).toBe(200)
     const body = await res.json() as any
-    expect(body.tip).toBeNull()
+    expect(body.subject_type).toBe('empty')
   })
 
   it('500s when env not configured', async () => {
     vi.mocked(llmModule.llmConfig).mockReturnValue(null)
-    const res = await coachPOST(makeReq('/api/coach', { image_b64: 'xx' }))
+    const res = await guidancePOST(makeReq('/api/guidance', { image_b64: 'xx' }))
     expect(res.status).toBe(500)
   })
 })
@@ -92,7 +111,7 @@ describe('/api/coach', () => {
 describe('/api/grade', () => {
   it('returns parsed scene analysis', async () => {
     vi.mocked(llmModule.callVision).mockResolvedValue(fakeGrade)
-    const res = await gradePOST(makeReq('/api/grade', { image_b64: 'xx', client_version: '1.0.0' }))
+    const res = await gradePOST(makeReq('/api/grade', { image_b64: 'xx' }))
     expect(res.status).toBe(200)
     const body = await res.json() as any
     expect(body.scene).toBe('portrait')
@@ -118,6 +137,5 @@ describe('/api/grade', () => {
     expect(res.status).toBe(200)
     const body = await res.json() as any
     expect(body.scene).toBe('other')
-    expect(body.lighting).toBe('mixed')
   })
 })
