@@ -32,6 +32,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     let cv = OnDeviceCV()
     let client = BackendClient()
     let renderer = PhotoRenderer()
+    let libraryStore = LibraryStore()
 
     // Latest preview pixel buffer kept on MainActor for capture-frame use.
     private var latestPreview: CVPixelBuffer?
@@ -229,16 +230,13 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
             let graded = CIPipeline.apply(analysis.grade, to: captured)
             let originalCG = renderer.toCGImage(captured)
             let gradedCG   = renderer.toCGImage(graded)
-            let jpegData   = try? renderer.renderToJPEG(graded)
-            return (originalCG, gradedCG, jpegData)
+            return (originalCG, gradedCG)
         }.value
         if let before = result.0, let after = result.1 {
             beforeAfter = (before, after)
             lastThumbnail = after
-        }
-        if let jpeg = result.2 {
-            do { try await renderer.saveToPhotoLibrary(jpeg) }
-            catch { statusBanner = "Couldn't save to Photos." }
+            // Capture lands in the in-app library, not the Camera Roll.
+            libraryStore.addCapture(original: before, graded: after, analysis: analysis)
         }
         state = .done
         Task {
@@ -258,6 +256,7 @@ public struct RootView: View {
     // AI button attract-animation state.
     @State private var aiPulse = false       // breathing scale
     @State private var aiRipple = false      // radiating ring
+    @State private var showLibrary = false
 
     public init() {}
 
@@ -310,6 +309,9 @@ public struct RootView: View {
             }
             .onAppear { vm.start() }
             .onDisappear { vm.stop() }
+            .fullScreenCover(isPresented: $showLibrary) {
+                LibraryView(store: vm.libraryStore) { showLibrary = false }
+            }
         }
     }
 
@@ -402,11 +404,8 @@ public struct RootView: View {
 
     private var galleryButton: some View {
         Button(action: {
-            // Open the iOS Photos app (cheapest viable v1).
-            // PHPicker / in-app gallery is a v2 polish.
-            if let url = URL(string: "photos-redirect://") {
-                UIApplication.shared.open(url)
-            }
+            // Open the in-app library — captures land there, not the Camera Roll.
+            showLibrary = true
         }) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
