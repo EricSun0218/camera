@@ -74,7 +74,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     private func requestGuidance() {
         guard let buf = latestPreview else {
             flowLog.error("requestGuidance: no preview frame available")
-            statusBanner = "相机预览未就绪"
+            statusBanner = "Camera not ready"
             return
         }
         flowLog.info("requestGuidance: start")
@@ -86,7 +86,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
             }.value
             guard let b64 = b64Opt else {
                 flowLog.error("requestGuidance: image encode failed")
-                statusBanner = "图像编码失败"
+                statusBanner = "Image encoding failed"
                 state = .idle
                 return
             }
@@ -101,10 +101,10 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
                 self.guidance = g
                 applyZoom(g.suggestedZoom)
                 if g.subjectType == .empty {
-                    statusBanner = "暂无主体可识别"
+                    statusBanner = "No subject detected"
                     Task {
                         try? await Task.sleep(nanoseconds: 2_000_000_000)
-                        if statusBanner == "暂无主体可识别" { statusBanner = nil }
+                        if statusBanner == "No subject detected" { statusBanner = nil }
                     }
                     state = .idle
                     return
@@ -113,7 +113,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
                 self.alignedFrames = 0
             } catch {
                 flowLog.error("requestGuidance: backend failed — \(error.localizedDescription, privacy: .public)")
-                statusBanner = "AI 指导失败: \(error.localizedDescription)"
+                statusBanner = "AI guidance failed: \(error.localizedDescription)"
                 state = .idle
             }
         }
@@ -187,7 +187,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
 
     nonisolated func cameraDidFail(_ error: Error) {
         Task { @MainActor in
-            self.statusBanner = "相机错误: \(error.localizedDescription)"
+            self.statusBanner = "Camera error: \(error.localizedDescription)"
             self.state = .idle
         }
     }
@@ -216,7 +216,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
             do {
                 analysis = try await client.grade(imageB64: b64)
             } catch {
-                statusBanner = "调色服务离线,已使用默认参数。"
+                statusBanner = "Color service offline — default preset applied."
                 analysis = NeutralPreset.sceneAnalysis
             }
         } else {
@@ -235,7 +235,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
         }
         if let jpeg = result.2 {
             do { try await renderer.saveToPhotoLibrary(jpeg) }
-            catch { statusBanner = "保存到相册失败。" }
+            catch { statusBanner = "Couldn't save to Photos." }
         }
         state = .done
         Task {
@@ -251,6 +251,10 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
 
 public struct RootView: View {
     @StateObject private var vm = RootViewModel()
+
+    // AI button attract-animation state.
+    @State private var aiPulse = false       // breathing scale
+    @State private var aiRipple = false      // radiating ring
 
     public init() {}
 
@@ -335,20 +339,49 @@ public struct RootView: View {
         .disabled(isBusy)
     }
 
+    /// True only when the button should beg for a tap (idle, not busy/analyzing/aligning).
+    private var aiIdle: Bool {
+        switch vm.state {
+        case .idle, .done: return true
+        default: return false
+        }
+    }
+
     private var aiButton: some View {
         Button(action: { vm.toggleAIGuidance() }) {
             ZStack {
+                // Radiating ring — strong "tap me" signal, idle only.
+                if aiIdle {
+                    Circle()
+                        .stroke(Color.cyan, lineWidth: 2)
+                        .frame(width: 52, height: 52)
+                        .scaleEffect(aiRipple ? 1.9 : 1.0)
+                        .opacity(aiRipple ? 0.0 : 0.7)
+                }
+                // Core button.
                 Circle()
                     .fill(LinearGradient(colors: [.cyan, .blue],
                                           startPoint: .topLeading, endPoint: .bottomTrailing))
                     .frame(width: 52, height: 52)
-                    .shadow(color: .cyan.opacity(0.6), radius: 10)
+                    .shadow(color: .cyan.opacity(aiIdle ? 0.9 : 0.5),
+                            radius: aiIdle && aiPulse ? 18 : 10)
                 Image(systemName: aiIcon)
-                    .font(.system(size: 22, weight: .medium))
+                    .font(.system(size: 22, weight: aiIdle ? .semibold : .medium))
                     .foregroundStyle(.white)
+                    .symbolEffect(.variableColor.iterative, isActive: aiIdle)
             }
+            // Gentle breathing scale, idle only.
+            .scaleEffect(aiIdle && aiPulse ? 1.10 : 1.0)
         }
         .disabled(isBusy)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                aiPulse = true
+            }
+            withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) {
+                aiRipple = true
+            }
+        }
     }
 
     private var galleryButton: some View {

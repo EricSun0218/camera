@@ -23,9 +23,9 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Cue 需要相机来拍摄并实时给出构图与调色建议。</string>
+	<string>Cue uses the camera to shoot photos and give real-time composition and color guidance.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Cue 将自动调色后的照片保存到你的相册。</string>
+	<string>Cue saves your auto-graded photos to your photo library.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIRequiresFullScreen</key>

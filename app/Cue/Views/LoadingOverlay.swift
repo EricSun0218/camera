@@ -59,10 +59,21 @@ public struct LoadingOverlay: View {
                         .shadow(color: .white.opacity(0.7), radius: 6)
                 }
 
-                Text("Cue 正在为你构图\(String(repeating: ".", count: dotsCount))")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.92))
+                VStack(spacing: 6) {
+                    Text("Composing your shot\(String(repeating: ".", count: dotsCount))")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.6), radius: 4)
+
+                    HStack(spacing: 5) {
+                        Image(systemName: "hand.raised.fill")
+                            .font(.system(size: 11))
+                        Text("Hold your phone steady")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundStyle(.white.opacity(0.8))
                     .shadow(color: .black.opacity(0.6), radius: 4)
+                }
             }
         }
         .onAppear {

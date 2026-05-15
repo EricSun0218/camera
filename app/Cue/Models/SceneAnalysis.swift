@@ -21,7 +21,7 @@ public struct SceneAnalysis: Codable, Equatable, Sendable {
 
     public static let neutralFallback = SceneAnalysis(
         scene: .other, lighting: .mixed,
-        rationale: "默认参数(网络/分析失败)",
+        rationale: "Default preset (network or analysis failed)",
         grade: .neutral
     )
 }

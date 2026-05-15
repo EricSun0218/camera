@@ -41,13 +41,13 @@ public struct PermissionGate<Content: View>: View {
         VStack(spacing: 24) {
             Image(systemName: "camera.slash.fill")
                 .font(.system(size: 64))
-            Text("需要相机权限")
+            Text("Camera Access Needed")
                 .font(.title2.weight(.semibold))
-            Text("Cue 需要相机来拍摄并自动调色。\n请在系统设置中开启相机权限。")
+            Text("Cue needs the camera to shoot and auto-grade your photos.\nEnable camera access in Settings.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 32)
-            Button("打开系统设置") {
+            Button("Open Settings") {
                 if let url = URL(string: UIApplication.openSettingsURLString) {
                     UIApplication.shared.open(url)
                 }
