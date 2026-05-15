@@ -85,15 +85,17 @@ describe('/api/guidance', () => {
     expect(res.status).toBe(400)
   })
 
-  it('returns empty fallback on bad shape', async () => {
+  it('bad shape falls back to a usable default scene target (never dead-ends)', async () => {
     vi.mocked(llmModule.callVision).mockResolvedValue({ wrong: true })
     const res = await guidancePOST(makeReq('/api/guidance', { image_b64: 'xx' }))
     expect(res.status).toBe(200)
     const body = await res.json() as any
-    expect(body.subject_type).toBe('empty')
+    expect(body.subject_type).toBe('scene')
+    expect(body.target_w).toBeGreaterThan(0)
+    expect(body.degraded).toBeUndefined()
   })
 
-  it('returns empty fallback on thrown error with degraded flag', async () => {
+  it('thrown error returns empty + degraded (genuine service failure)', async () => {
     vi.mocked(llmModule.callVision).mockRejectedValue(new Error('boom'))
     const res = await guidancePOST(makeReq('/api/guidance', { image_b64: 'xx' }))
     expect(res.status).toBe(200)
@@ -102,31 +104,31 @@ describe('/api/guidance', () => {
     expect(body.degraded).toBe(true)
   })
 
-  it('schema-reject empty fallback is NOT degraded', async () => {
-    vi.mocked(llmModule.callVision).mockResolvedValue({ wrong: true })
+  it('model "empty" falls back to a default scene target', async () => {
+    vi.mocked(llmModule.callVision).mockResolvedValue({ subject_type: 'empty', suggested_zoom: 1 })
     const res = await guidancePOST(makeReq('/api/guidance', { image_b64: 'xx' }))
     const body = await res.json() as any
-    expect(body.subject_type).toBe('empty')
+    expect(body.subject_type).toBe('scene')
     expect(body.degraded).toBeUndefined()
   })
 
-  it('coerces incomplete person guidance (missing pose fields) to empty', async () => {
+  it('incomplete person guidance falls back to a default scene target', async () => {
     vi.mocked(llmModule.callVision).mockResolvedValue({
       subject_type: 'person', suggested_zoom: 1,
     })
     const res = await guidancePOST(makeReq('/api/guidance', { image_b64: 'xx' }))
     const body = await res.json() as any
-    expect(body.subject_type).toBe('empty')
-    expect(body.degraded).toBeUndefined()
+    expect(body.subject_type).toBe('scene')
   })
 
-  it('coerces incomplete scene guidance (missing target fields) to empty', async () => {
+  it('incomplete scene guidance falls back to a default scene target', async () => {
     vi.mocked(llmModule.callVision).mockResolvedValue({
       subject_type: 'scene', target_x: 0.5, suggested_zoom: 1,
     })
     const res = await guidancePOST(makeReq('/api/guidance', { image_b64: 'xx' }))
     const body = await res.json() as any
-    expect(body.subject_type).toBe('empty')
+    expect(body.subject_type).toBe('scene')
+    expect(body.target_w).toBeGreaterThan(0)
   })
 
   it('500s when env not configured', async () => {
