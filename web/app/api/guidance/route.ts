@@ -27,6 +27,8 @@ export async function POST(req: Request) {
   const parse = RequestBody.safeParse(await req.json().catch(() => ({})))
   if (!parse.success) return NextResponse.json({ error: 'bad_body' }, { status: 400 })
 
+  const debug = req.headers.get('x-debug') === '1'
+
   try {
     const raw = await callVision(
       makeLLM(cfg.apiKey, cfg.baseURL),
@@ -39,10 +41,18 @@ export async function POST(req: Request) {
       cfg.model,
     )
     const ok = AIGuidanceSchema.safeParse(raw)
-    if (!ok.success) return NextResponse.json(emptyResponse)
-    return NextResponse.json(ok.data)
+    if (!ok.success) {
+      return NextResponse.json(
+        debug ? { ...emptyResponse, _debug: { reason: 'schema_reject', raw, issues: ok.error.issues } } : emptyResponse
+      )
+    }
+    return NextResponse.json(
+      debug ? { ...ok.data, _debug: { reason: 'ok', raw } } : ok.data
+    )
   } catch (e) {
     console.error('guidance', e)
-    return NextResponse.json(emptyResponse)
+    return NextResponse.json(
+      debug ? { ...emptyResponse, _debug: { reason: 'exception', error: String(e) } } : emptyResponse
+    )
   }
 }
