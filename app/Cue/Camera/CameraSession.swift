@@ -65,6 +65,19 @@ public final class CameraSession: NSObject {
     /// Which camera is active. Mutated only on `sessionQueue`.
     private var currentPosition: AVCaptureDevice.Position = .back
 
+    /// Optical-zoom state. Written on `sessionQueue`, read (approximately) from
+    /// any thread under `zoomStateLock`.
+    private let zoomStateLock = NSLock()
+    private var _zoomMap = ZoomMapping(oneXRawFactor: 1.0, minRaw: 1.0, maxRaw: 1.0)
+    private var _currentOptical: CGFloat = 1.0
+
+    /// Current optical zoom factor (last value passed to `setZoom`, clamped).
+    public var currentOpticalZoom: CGFloat { zoomStateLock.withLock { _currentOptical } }
+    /// Lowest optical factor the active device supports (0.5 on multi-cam).
+    public var minOpticalZoom: CGFloat { zoomStateLock.withLock { _zoomMap.minOptical } }
+    /// Highest optical factor exposed (3.0).
+    public var maxOpticalZoom: CGFloat { zoomStateLock.withLock { _zoomMap.maxOptical } }
+
     public override init() {
         super.init()
     }
@@ -80,6 +93,7 @@ public final class CameraSession: NSObject {
                 self.session.addInput(input)
                 self.videoDeviceInput = input
                 self.currentPosition = .back
+                self.updateZoomState(for: input.device)
 
                 self.videoOutput.alwaysDiscardsLateVideoFrames = true
                 self.videoOutput.videoSettings = [
@@ -104,10 +118,58 @@ public final class CameraSession: NSObject {
 
     /// Build a camera input for the given position.
     private func makeInput(position: AVCaptureDevice.Position) throws -> AVCaptureDeviceInput {
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
+        guard let device = Self.bestDevice(position: position) else {
             throw CameraError.noBackCamera
         }
         return try AVCaptureDeviceInput(device: device)
+    }
+
+    /// Pick the widest-range camera for `position`. Back: prefer a virtual
+    /// multi-camera device (ultra-wide … tele as one continuous zoom range) so
+    /// optical zoom can reach 0.5x; fall back to the plain wide-angle camera on
+    /// devices without one. Front: the plain wide-angle camera.
+    private static func bestDevice(position: AVCaptureDevice.Position) -> AVCaptureDevice? {
+        if position == .back {
+            for type in [AVCaptureDevice.DeviceType.builtInTripleCamera,
+                         .builtInDualWideCamera,
+                         .builtInDualCamera] {
+                if let d = AVCaptureDevice.default(type, for: .video, position: .back) {
+                    return d
+                }
+            }
+        }
+        return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
+    }
+
+    /// Build the optical↔raw zoom mapping for `device`. On a virtual multi-cam
+    /// device the first lens-switchover factor is the raw zoom of the main "1x"
+    /// lens; a single-cam device has none, so 1x == raw 1.0.
+    private static func zoomMapping(for device: AVCaptureDevice) -> ZoomMapping {
+        let oneX = device.virtualDeviceSwitchOverVideoZoomFactors.first
+            .map { CGFloat(truncating: $0) } ?? 1.0
+        return ZoomMapping(oneXRawFactor: oneX,
+                           minRaw: device.minAvailableVideoZoomFactor,
+                           maxRaw: device.maxAvailableVideoZoomFactor)
+    }
+
+    /// Refresh the zoom mapping for `device` and pin it to the main "1x" lens.
+    /// Called on `sessionQueue` whenever the active device changes — otherwise a
+    /// virtual device would start at raw 1.0 (the ultra-wide / 0.5x).
+    private func updateZoomState(for device: AVCaptureDevice) {
+        let map = Self.zoomMapping(for: device)
+        zoomStateLock.withLock {
+            self._zoomMap = map
+            self._currentOptical = 1.0
+        }
+        do {
+            try device.lockForConfiguration()
+            let oneX = min(max(map.oneXRawFactor, device.minAvailableVideoZoomFactor),
+                           device.maxAvailableVideoZoomFactor)
+            device.videoZoomFactor = oneX
+            device.unlockForConfiguration()
+        } catch {
+            // best-effort
+        }
     }
 
     /// Pin every connection to portrait (90°) — preview and still photo alike,
@@ -137,6 +199,9 @@ public final class CameraSession: NSObject {
                 self.session.addInput(oldInput)  // revert — keep a working camera
             }
             self.applyPortraitRotation()
+            if let dev = self.videoDeviceInput?.device {
+                self.updateZoomState(for: dev)
+            }
             self.session.commitConfiguration()
         }
     }
@@ -203,15 +268,20 @@ public final class CameraSession: NSObject {
         }
     }
 
-    /// Ramp the active device's videoZoomFactor. Clamped to [1.0, min(activeFormat.max, 3.0)].
-    public func setZoom(_ factor: CGFloat) {
+    /// Ramp the active device to an *optical* zoom factor (0.5–3.0 scale).
+    /// The optical value is clamped to what the device supports and converted
+    /// to a raw `videoZoomFactor` via the active `ZoomMapping`.
+    public func setZoom(_ optical: CGFloat) {
         sessionQueue.async { [weak self] in
             guard let self, let device = self.videoDeviceInput?.device else { return }
-            let clamped = max(1.0, min(factor, min(device.activeFormat.videoMaxZoomFactor, 3.0)))
+            let map = self.zoomStateLock.withLock { self._zoomMap }
+            let clampedOptical = map.clampOptical(optical)
+            let raw = map.rawFor(optical: optical)
             do {
                 try device.lockForConfiguration()
-                device.ramp(toVideoZoomFactor: clamped, withRate: 4.0)
+                device.ramp(toVideoZoomFactor: raw, withRate: 4.0)
                 device.unlockForConfiguration()
+                self.zoomStateLock.withLock { self._currentOptical = clampedOptical }
             } catch {
                 // best-effort; ignore
             }
