@@ -15,6 +15,8 @@ export const GradeParamsSchema = z.object({
   shadows:     z.number().min(-100).max(100),
   whites:      z.number().min(-100).max(100),
   blacks:      z.number().min(-100).max(100),
+  brilliance:  z.number().min(-100).max(100),
+  clarity:     z.number().min(0).max(100),
   saturation:  z.number().min(-100).max(100),
   vibrance:    z.number().min(-100).max(100),
   temperature: z.number().min(-100).max(100),
@@ -96,6 +98,7 @@ export function neutralGrade(): GradeParams {
   return {
     exposure_ev: 0, contrast: 0,
     highlights: 0, shadows: 0, whites: 0, blacks: 0,
+    brilliance: 0, clarity: 0,
     saturation: 0, vibrance: 0,
     temperature: 0, tint: 0,
     hsl: Object.fromEntries(HSL_BANDS.map(b => [b, { ...flatBand }])) as GradeParams['hsl'],

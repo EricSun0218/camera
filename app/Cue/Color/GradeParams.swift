@@ -32,6 +32,8 @@ public struct GradeParams: Codable, Equatable, Sendable {
     public var shadows: Double           // -100 ... +100
     public var whites: Double
     public var blacks: Double
+    public var brilliance: Double        // -100 ... +100  (Apple's "smart" shadow/highlight lift)
+    public var clarity: Double           //    0 ... +100  (midtone local contrast / "Definition")
     public var saturation: Double        // -100 ... +100
     public var vibrance: Double          // -100 ... +100
     public var temperature: Double       // -100 ... +100
@@ -43,6 +45,7 @@ public struct GradeParams: Codable, Equatable, Sendable {
     public static let neutral = GradeParams(
         exposure_ev: 0, contrast: 0,
         highlights: 0, shadows: 0, whites: 0, blacks: 0,
+        brilliance: 0, clarity: 0,
         saturation: 0, vibrance: 0,
         temperature: 0, tint: 0,
         hsl: .zero,
@@ -58,6 +61,8 @@ public struct GradeParams: Codable, Equatable, Sendable {
         g.shadows           = g.shadows.clamped(-100, 100)
         g.whites            = g.whites.clamped(-100, 100)
         g.blacks            = g.blacks.clamped(-100, 100)
+        g.brilliance        = g.brilliance.clamped(-100, 100)
+        g.clarity           = g.clarity.clamped(0, 100)
         g.saturation        = g.saturation.clamped(-100, 100)
         g.vibrance          = g.vibrance.clamped(-100, 100)
         g.temperature       = g.temperature.clamped(-100, 100)

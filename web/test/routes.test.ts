@@ -31,6 +31,7 @@ const fakeGrade = {
   scene: 'portrait', lighting: 'golden_hour', rationale: 'warm',
   grade: {
     exposure_ev: 0.1, contrast: 5, highlights: -20, shadows: 15, whites: 0, blacks: -5,
+    brilliance: 12, clarity: 6,
     saturation: 0, vibrance: 10, temperature: 5, tint: 0,
     hsl: {
       red:    { hue: 0, saturation: -5, luminance: 0 },

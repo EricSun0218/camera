@@ -26,6 +26,16 @@ public enum CIPipeline {
             img = f.outputImage ?? img
         }
 
+        // 2b. Brilliance — Apple's "smart" lift: opens shadows + tames highlights,
+        // colour-neutral. Positive = richer detail, negative = flatter.
+        if p.brilliance != 0 {
+            let f = CIFilter.highlightShadowAdjust()
+            f.inputImage = img
+            f.highlightAmount = Float(1.0 + p.brilliance / 100.0 * -0.35)
+            f.shadowAmount    = Float(p.brilliance / 100.0 * 0.5)
+            img = f.outputImage ?? img
+        }
+
         // 3. Whites/Blacks/Contrast via tone curve
         let toneCurve = makeToneCurve(whites: p.whites, blacks: p.blacks, contrast: p.contrast)
         if let curve = toneCurve {
@@ -70,6 +80,17 @@ public enum CIPipeline {
         // 7. HSL per band
         if hasAnyHSL(p.hsl) {
             img = HSLColorCube.apply(to: img, hsl: p.hsl)
+        }
+
+        // 7b. Clarity — midtone local contrast ("Definition"). A large-radius
+        // unsharp mask is the classic clarity move: it punches up structure
+        // without touching fine grain.
+        if p.clarity > 0 {
+            let f = CIFilter.unsharpMask()
+            f.inputImage = img
+            f.radius = 2.5
+            f.intensity = Float(p.clarity / 100.0 * 0.6)
+            img = f.outputImage ?? img
         }
 
         // 8. Vignette
