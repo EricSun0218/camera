@@ -334,7 +334,7 @@ public struct RootView: View {
                         .ignoresSafeArea()
                 }
 
-                // AI guidance overlay (only while aligning): two-box alignment guide.
+                // AI guidance overlay (only while aligning): two-ball + arrow guide.
                 if case .aligning = vm.state, let target = alignmentTargetRect {
                     AlignmentView(target: target,
                                   current: alignmentCurrentRect,
