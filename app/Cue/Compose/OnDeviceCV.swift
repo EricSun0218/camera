@@ -15,13 +15,19 @@ public struct BodyPose: Equatable {
 }
 
 public struct ComposeState: Equatable {
-    public var subjectBox: CGRect?     // normalized to [0,1] in image coords
-    public var faceBoxes: [CGRect]     // normalized
+    public var subjectBox: CGRect?     // normalized [0,1], Vision bottom-left — noisy per-frame saliency
+    public var faceBoxes: [CGRect]     // normalized, Vision bottom-left
     public var horizonDegrees: Double  // device roll relative to ground, -180..180
     public var bodyPose: BodyPose      // pose skeleton when a person is in frame
+    /// The actively-TRACKED subject box (Vision bottom-left), set only while an
+    /// alignment session is running. Unlike `subjectBox` this follows ONE locked
+    /// subject smoothly across frames, so the alignment ball moves with the phone
+    /// instead of jittering.
+    public var trackedBox: CGRect?
 
     public static let initial = ComposeState(subjectBox: nil, faceBoxes: [],
-                                              horizonDegrees: 0, bodyPose: .none)
+                                              horizonDegrees: 0, bodyPose: .none,
+                                              trackedBox: nil)
 }
 
 public final class OnDeviceCV: ObservableObject {
@@ -31,10 +37,17 @@ public final class OnDeviceCV: ObservableObject {
     private let saliencyQ = DispatchQueue(label: "cue.cv.saliency", qos: .userInitiated)
     private let faceQ     = DispatchQueue(label: "cue.cv.face",     qos: .userInitiated)
     private let poseQ     = DispatchQueue(label: "cue.cv.pose",     qos: .userInitiated)
+    /// Object tracking must use one serial queue (VNSequenceRequestHandler is stateful).
+    private let trackQ    = DispatchQueue(label: "cue.cv.track",    qos: .userInitiated)
     private var lastSaliencyAt: TimeInterval = 0
     private var lastFaceAt: TimeInterval = 0
     private var lastPoseAt: TimeInterval = 0
     private let cvHz: TimeInterval = 1.0 / 10.0  // 10 Hz throttle
+
+    // Tracking state — touched only on trackQ.
+    private var sequenceHandler: VNSequenceRequestHandler?
+    private var trackingRequest: VNTrackObjectRequest?
+    private var trackingActive = false
 
     public init() {
         startMotion()
@@ -53,7 +66,8 @@ public final class OnDeviceCV: ObservableObject {
         }
     }
 
-    /// Feed each preview frame here. Internally throttles to 10 Hz.
+    /// Feed each preview frame here. Detection is throttled to 10 Hz; object
+    /// tracking (when active) runs every frame for smooth follow.
     public func ingest(pixelBuffer: CVPixelBuffer) {
         let now = CACurrentMediaTime()
         if now - lastSaliencyAt > cvHz {
@@ -68,6 +82,70 @@ public final class OnDeviceCV: ObservableObject {
             lastPoseAt = now
             runBodyPose(pixelBuffer: pixelBuffer)
         }
+        runTracking(pixelBuffer: pixelBuffer)
+    }
+
+    // MARK: - Object tracking (smooth subject follow during alignment)
+
+    /// Lock onto a subject and start tracking it. `seed` is a normalized rect in
+    /// Vision coords (bottom-left origin). Call when an alignment session starts.
+    public func beginTracking(seed: CGRect) {
+        trackQ.async { [weak self] in
+            guard let self else { return }
+            let obs = VNDetectedObjectObservation(boundingBox: seed)
+            let req = VNTrackObjectRequest(detectedObjectObservation: obs)
+            req.trackingLevel = .accurate
+            self.trackingRequest = req
+            self.sequenceHandler = VNSequenceRequestHandler()
+            self.trackingActive = true
+            DispatchQueue.main.async { self.state.trackedBox = seed }
+        }
+    }
+
+    /// Stop tracking. Idempotent — safe to call when not tracking.
+    public func endTracking() {
+        trackQ.async { [weak self] in
+            guard let self else { return }
+            self.trackingActive = false
+            self.trackingRequest = nil
+            self.sequenceHandler = nil
+            DispatchQueue.main.async { self.state.trackedBox = nil }
+        }
+    }
+
+    private func runTracking(pixelBuffer: CVPixelBuffer) {
+        trackQ.async { [weak self] in
+            guard let self, self.trackingActive,
+                  let req = self.trackingRequest,
+                  let handler = self.sequenceHandler else { return }
+            do {
+                try handler.perform([req], on: pixelBuffer)
+                guard let obs = req.results?.first as? VNDetectedObjectObservation,
+                      obs.confidence > 0.2 else { return }
+                req.inputObservation = obs  // feed result back for the next frame
+                let box = obs.boundingBox
+                DispatchQueue.main.async {
+                    guard self.trackingActive else { return }
+                    // Light EMA on top of tracking for extra-silky motion.
+                    if let prev = self.state.trackedBox {
+                        self.state.trackedBox = Self.ema(prev, box, newWeight: 0.6)
+                    } else {
+                        self.state.trackedBox = box
+                    }
+                }
+            } catch {
+                // Tracking lost this frame — keep the last box, try again next frame.
+            }
+        }
+    }
+
+    /// Exponential moving average of two rects (`newWeight` ∈ 0...1).
+    private static func ema(_ a: CGRect, _ b: CGRect, newWeight w: CGFloat) -> CGRect {
+        let o = 1 - w
+        return CGRect(x: a.minX * o + b.minX * w,
+                      y: a.minY * o + b.minY * w,
+                      width: a.width * o + b.width * w,
+                      height: a.height * o + b.height * w)
     }
 
     private func runSaliency(pixelBuffer: CVPixelBuffer) {

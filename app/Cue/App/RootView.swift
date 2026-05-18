@@ -71,6 +71,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     }
 
     private func cancelGuidance() {
+        cv.endTracking()
         guidance = .empty
         alignmentScore = 0
         state = .idle
@@ -130,6 +131,10 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
                     flowLog.info("requestGuidance: cancelled during zoom-ramp settle, dropping result")
                     return
                 }
+                // Lock onto the subject so the alignment ball tracks it smoothly
+                // (saliency re-detection jitters; VNTrackObjectRequest follows).
+                let kind: SubjectKind = g.subjectType == .person ? .person : .scene
+                self.cv.beginTracking(seed: AlignmentChecker.trackingSeed(kind: kind, state: self.compose))
                 self.state = .aligning(since: Date())
                 self.alignedFrames = 0
             } catch {
@@ -208,6 +213,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
 
     private func triggerCapture() {
         guard case .aligning = state else { return }
+        cv.endTracking()
         state = .capturing
         startCaptureWatchdog()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -250,6 +256,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
         default:
             // idle / done / analyzing / aligning — shoot NOW, drop any in-flight guidance.
             flowGeneration += 1
+            cv.endTracking()
             guidance = .empty
             alignmentScore = 0
             state = .capturing
