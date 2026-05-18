@@ -38,12 +38,6 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         DEVELOPMENT_TEAM: ""    # set in Xcode
-        # Core Image Metal kernels (HSLKernel.ci.metal) must be compiled AND
-        # linked with -fcikernel, otherwise CIColorKernel can't find the
-        # function ("Function 'hslAdjust' does not exist"). Newer Metal
-        # toolchains use -fcikernel for the linker too (-cikernel is deprecated).
-        OTHER_METAL_FLAGS: -fcikernel
-        MTLLINKER_FLAGS: -fcikernel
     resources:
       - path: Cue/Resources/Assets.xcassets
 

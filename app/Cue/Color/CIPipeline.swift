@@ -69,7 +69,7 @@ public enum CIPipeline {
 
         // 7. HSL per band
         if hasAnyHSL(p.hsl) {
-            img = HSLKernel.apply(to: img, hsl: p.hsl)
+            img = HSLColorCube.apply(to: img, hsl: p.hsl)
         }
 
         // 8. Vignette
