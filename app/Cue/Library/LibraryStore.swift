@@ -113,7 +113,8 @@ public final class LibraryStore: ObservableObject {
 
     // MARK: - File IO
 
-    public func libraryURL(_ name: String) -> URL {
+    /// nonisolated — pure path math on the immutable `dir`, safe off-main.
+    public nonisolated func libraryURL(_ name: String) -> URL {
         dir.appendingPathComponent(name)
     }
 
@@ -145,7 +146,8 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
-    public func loadImage(_ filename: String) -> CGImage? {
+    /// nonisolated — pure file decode, no actor state. Safe to call off-main.
+    public nonisolated func loadImage(_ filename: String) -> CGImage? {
         let url = libraryURL(filename)
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         return CGImageSourceCreateImageAtIndex(src, 0, nil)
@@ -154,7 +156,8 @@ public final class LibraryStore: ObservableObject {
     /// Decode a DOWNSAMPLED thumbnail of a stored JPEG without loading the full
     /// (potentially 48MP) image into memory. Use this for grid cells, filmstrip
     /// thumbs, and the editor's on-screen image — never `loadImage` for display.
-    public func loadThumbnail(_ filename: String, maxPixel: CGFloat = 400) -> CGImage? {
+    /// nonisolated — pure file decode, safe off-main (AsyncThumbnail uses this).
+    public nonisolated func loadThumbnail(_ filename: String, maxPixel: CGFloat = 400) -> CGImage? {
         let url = libraryURL(filename)
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options: [CFString: Any] = [

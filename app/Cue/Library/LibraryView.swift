@@ -154,18 +154,9 @@ public struct LibraryView: View {
 
     @ViewBuilder
     private func cell(for photo: LibraryPhoto) -> some View {
-        ZStack {
-            Rectangle().fill(Color.white.opacity(0.06))
-            if let cg = store.loadThumbnail(photo.filename, maxPixel: 400) {
-                Image(decorative: cg, scale: 1, orientation: .up)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Image(systemName: "photo")
-                    .font(.title2)
-                    .foregroundStyle(.white.opacity(0.3))
-            }
-        }
+        // Off-main decode + cache — keeps grid scrolling smooth.
+        AsyncThumbnail(store: store, filename: photo.filename,
+                       maxPixel: 400, contentMode: .fill)
         .aspectRatio(1, contentMode: .fill)
         .clipped()
         // Square cells (no corner radius) so the 1.5pt gaps read as clean

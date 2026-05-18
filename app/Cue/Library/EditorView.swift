@@ -97,16 +97,11 @@ public struct EditorView: View {
 
     @ViewBuilder
     private func pageImage(_ photo: LibraryPhoto) -> some View {
-        if let cg = store.loadThumbnail(photo.filename, maxPixel: 2000) {
-            Image(decorative: cg, scale: 1, orientation: .up)
-                .resizable()
-                .scaledToFit()
-                .padding(.horizontal, 8)
-        } else {
-            Color.white.opacity(0.05)
-                .overlay(Image(systemName: "photo").font(.largeTitle)
-                    .foregroundStyle(.white.opacity(0.3)))
-        }
+        // Decoded off-main + cached — TabView re-renders constantly while
+        // swiping; a synchronous decode here janks the swipe.
+        AsyncThumbnail(store: store, filename: photo.filename,
+                       maxPixel: 2000, contentMode: .fit)
+            .padding(.horizontal, 8)
     }
 
     // MARK: - Filmstrip (the whole library)
@@ -140,14 +135,8 @@ public struct EditorView: View {
                 currentID = photo.id
             }
         } label: {
-            ZStack {
-                Rectangle().fill(Color.white.opacity(0.06))
-                if let cg = store.loadThumbnail(photo.filename, maxPixel: 160) {
-                    Image(decorative: cg, scale: 1, orientation: .up)
-                        .resizable()
-                        .scaledToFill()
-                }
-            }
+            AsyncThumbnail(store: store, filename: photo.filename,
+                           maxPixel: 160, contentMode: .fill)
             .frame(width: 54, height: 54)
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay(
