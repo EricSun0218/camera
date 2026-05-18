@@ -46,3 +46,102 @@ import Vision
         #expect(m.maxRaw == 4.0)
     }
 }
+
+@Suite("NeededOpticalZoom") struct NeededOpticalZoomTests {
+
+    @Test func personHeightMatch() {
+        // detected height 0.3, target height 0.6 -> needs 2x.
+        let z = AlignmentChecker.neededOpticalZoom(
+            kind: .person,
+            targetSize: CGSize(width: 0.3, height: 0.6),
+            detectedSize: CGSize(width: 0.15, height: 0.3),
+            currentOptical: 1.0, calibration: 1.0)
+        #expect(abs(z - 2.0) < 1e-9)
+    }
+
+    @Test func personRespectsCurrentOptical() {
+        // Same ratio but already at 1.5x -> 3.0x.
+        let z = AlignmentChecker.neededOpticalZoom(
+            kind: .person,
+            targetSize: CGSize(width: 0.3, height: 0.6),
+            detectedSize: CGSize(width: 0.15, height: 0.3),
+            currentOptical: 1.5, calibration: 1.0)
+        #expect(abs(z - 3.0) < 1e-9)
+    }
+
+    @Test func personCalibration() {
+        // calibration 0.85: 1.0 * 0.6 * 0.85 / 0.3 = 1.7.
+        let z = AlignmentChecker.neededOpticalZoom(
+            kind: .person,
+            targetSize: CGSize(width: 0.3, height: 0.6),
+            detectedSize: CGSize(width: 0.15, height: 0.3),
+            currentOptical: 1.0, calibration: 0.85)
+        #expect(abs(z - 1.7) < 1e-9)
+    }
+
+    @Test func sceneAreaMatch() {
+        // target area 0.24, detected area 0.06 -> sqrt(4) = 2x.
+        let z = AlignmentChecker.neededOpticalZoom(
+            kind: .scene,
+            targetSize: CGSize(width: 0.4, height: 0.6),
+            detectedSize: CGSize(width: 0.2, height: 0.3),
+            currentOptical: 1.0)
+        #expect(abs(z - 2.0) < 1e-9)
+    }
+
+    @Test func degenerateDetectedReturnsCurrent() {
+        let z = AlignmentChecker.neededOpticalZoom(
+            kind: .person,
+            targetSize: CGSize(width: 0.3, height: 0.6),
+            detectedSize: CGSize(width: 0, height: 0),
+            currentOptical: 1.3)
+        #expect(z == 1.3)
+    }
+}
+
+@Suite("MeasuredSubject") struct MeasuredSubjectTests {
+
+    @Test func personFromBodyPose() {
+        // Joints span x 0.4..0.5 (w 0.1), y 0.1..0.9 (h 0.8).
+        let joints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [
+            .nose: CGPoint(x: 0.5, y: 0.9),
+            .leftAnkle: CGPoint(x: 0.4, y: 0.1),
+        ]
+        let state = ComposeState(subjectBox: nil, faceBoxes: [],
+                                 horizonDegrees: 0,
+                                 bodyPose: BodyPose(joints: joints, confidence: 0.9),
+                                 trackedBox: nil)
+        let m = AlignmentChecker.measuredSubject(kind: .person, state: state)
+        #expect(m?.comparable == true)
+        #expect(abs((m?.size.width ?? -1) - 0.1) < 1e-6)
+        #expect(abs((m?.size.height ?? -1) - 0.8) < 1e-6)
+    }
+
+    @Test func personFaceFallbackNotComparable() {
+        let state = ComposeState(subjectBox: nil,
+                                 faceBoxes: [CGRect(x: 0.4, y: 0.4, width: 0.2, height: 0.25)],
+                                 horizonDegrees: 0, bodyPose: .none, trackedBox: nil)
+        let m = AlignmentChecker.measuredSubject(kind: .person, state: state)
+        #expect(m?.comparable == false)
+        #expect(abs((m?.size.height ?? -1) - 0.25) < 1e-6)
+    }
+
+    @Test func personNothingDetected() {
+        let m = AlignmentChecker.measuredSubject(kind: .person, state: .initial)
+        #expect(m == nil)
+    }
+
+    @Test func sceneFromSubjectBox() {
+        let state = ComposeState(subjectBox: CGRect(x: 0.3, y: 0.3, width: 0.3, height: 0.4),
+                                 faceBoxes: [], horizonDegrees: 0,
+                                 bodyPose: .none, trackedBox: nil)
+        let m = AlignmentChecker.measuredSubject(kind: .scene, state: state)
+        #expect(m?.comparable == true)
+        #expect(abs((m?.size.width ?? -1) - 0.3) < 1e-6)
+    }
+
+    @Test func sceneNothingDetected() {
+        let m = AlignmentChecker.measuredSubject(kind: .scene, state: .initial)
+        #expect(m == nil)
+    }
+}

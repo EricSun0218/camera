@@ -26,6 +26,57 @@ public enum AlignmentChecker {
     /// 1.0 = centers coincide; 0 = centers `maxAlignDistance` apart or further.
     public static let maxAlignDistance: Double = 0.18
 
+    /// Joint-bounding-box height as a fraction of the true pose silhouette
+    /// height. Vision's body-pose joints span roughly nose-to-ankle, shorter
+    /// than the SF Symbol silhouette the pose target is sized against.
+    /// 1.0 = no correction; tune on a real device.
+    public static let poseHeightCalibration: Double = 1.0
+
+    /// The live subject's size in normalized [0..1] viewfinder space, for zoom
+    /// sizing. `comparable` is false when the measurement can't be matched
+    /// against the AI target size (a face box vs a full-body pose height) —
+    /// callers should fall back to the backend's suggested zoom in that case.
+    /// Does NOT use `trackedBox`: zoom sizing happens before an alignment session.
+    public static func measuredSubject(kind: SubjectKind,
+                                       state: ComposeState) -> (size: CGSize, comparable: Bool)? {
+        switch kind {
+        case .person:
+            if let pose = boundingBox(of: state.bodyPose.joints) {
+                return (pose.size, true)
+            } else if let face = state.faceBoxes.first {
+                return (face.size, false)
+            } else {
+                return nil
+            }
+        case .scene:
+            if let s = state.subjectBox {
+                return (s.size, true)
+            }
+            return nil
+        }
+    }
+
+    /// Optical zoom needed so the detected subject reaches the AI target size.
+    /// Person: matched by height (with `poseHeightCalibration`). Scene: matched
+    /// by area. Returns `currentOptical` unchanged when `detected` is degenerate.
+    public static func neededOpticalZoom(kind: SubjectKind,
+                                         targetSize: CGSize,
+                                         detectedSize: CGSize,
+                                         currentOptical: Double,
+                                         calibration: Double = poseHeightCalibration) -> Double {
+        switch kind {
+        case .person:
+            guard detectedSize.height > 0 else { return currentOptical }
+            return currentOptical * Double(targetSize.height) * calibration
+                 / Double(detectedSize.height)
+        case .scene:
+            let targetArea = Double(targetSize.width * targetSize.height)
+            let detectedArea = Double(detectedSize.width * detectedSize.height)
+            guard detectedArea > 0, targetArea > 0 else { return currentOptical }
+            return currentOptical * (targetArea / detectedArea).squareRoot()
+        }
+    }
+
     public static func score(target: AlignmentTarget, state: ComposeState) -> Double {
         guard let d = detectedBox(kind: target.kind, state: state) else { return 0 }
         let dx = Double(d.midX - target.box.midX)
