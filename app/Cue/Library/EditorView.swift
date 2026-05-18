@@ -161,32 +161,32 @@ public struct EditorView: View {
 
     // MARK: - Action bar
 
-    /// Floating glass control cluster: Download / AI Grade (hero) / Share.
+    /// Compact floating glass control cluster: Download / AI Grade / Share.
+    /// Icon-only, no labels — three circular glass buttons.
     private var actionBar: some View {
-        GlassEffectContainer(spacing: 10) {
-            HStack(spacing: 10) {
+        GlassEffectContainer(spacing: 14) {
+            HStack(spacing: 14) {
                 // Download — export the current photo to the Camera Roll.
                 Button {
                     Task { await download() }
                 } label: {
-                    actionLabel(icon: "square.and.arrow.down", label: "Download")
+                    iconLabel("arrow.down.to.line")
                 }
                 .buttonStyle(.glass)
                 .disabled(isGrading || currentPhoto == nil)
 
                 // AI Grade — the hero action; press again to re-roll.
                 Button(action: { Task { await grade() } }) {
-                    VStack(spacing: 5) {
+                    Group {
                         if isGrading {
-                            ProgressView().tint(.white).frame(height: 21)
+                            ProgressView().tint(.white)
                         } else {
-                            Image(systemName: "sparkles").font(.system(size: 19))
+                            // Color-themed: AI color grading.
+                            Image(systemName: "paintpalette.fill")
+                                .font(.system(size: 21, weight: .medium))
                         }
-                        Text(isGrading ? "Grading…" : "AI Grade")
-                            .font(.system(size: 12, weight: .semibold))
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
+                    .frame(width: 52, height: 52)
                     .foregroundStyle(.white)
                 }
                 .buttonStyle(.glassProminent)
@@ -196,32 +196,26 @@ public struct EditorView: View {
                 // Share — system share sheet for the current photo file.
                 if let photo = currentPhoto {
                     ShareLink(item: store.libraryURL(photo.filename)) {
-                        actionLabel(icon: "square.and.arrow.up", label: "Share")
+                        iconLabel("square.and.arrow.up")
                     }
                     .buttonStyle(.glass)
                     .disabled(isGrading)
                 } else {
-                    Button {} label: {
-                        actionLabel(icon: "square.and.arrow.up", label: "Share")
-                    }
-                    .buttonStyle(.glass)
-                    .disabled(true)
-                    .opacity(0.4)
+                    Button {} label: { iconLabel("square.and.arrow.up") }
+                        .buttonStyle(.glass)
+                        .disabled(true)
+                        .opacity(0.4)
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 16)
+        .padding(.bottom, 18)
     }
 
-    private func actionLabel(icon: String, label: String) -> some View {
-        VStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 19))
-            Text(label).font(.system(size: 12, weight: .semibold))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 13)
-        .foregroundStyle(.white)
+    private func iconLabel(_ icon: String) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 19, weight: .medium))
+            .frame(width: 48, height: 48)
+            .foregroundStyle(.white)
     }
 
     // MARK: - Grading

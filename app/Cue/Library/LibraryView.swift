@@ -11,12 +11,14 @@ public struct LibraryView: View {
 
     @State private var toast: String?
 
-    /// Dense 3-column grid, 2pt gaps — matches the iOS 26 Photos app Library tab.
-    private let columns = [
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-    ]
+    /// Dense 3-column grid. 1.5pt gaps read as thin black separator lines
+    /// between photos — matches the iOS 26 Photos app Library tab.
+    private let gridGap: CGFloat = 1.5
+    private var columns: [GridItem] {
+        [GridItem(.flexible(), spacing: gridGap),
+         GridItem(.flexible(), spacing: gridGap),
+         GridItem(.flexible(), spacing: gridGap)]
+    }
 
     public init(store: LibraryStore, dismiss: @escaping () -> Void) {
         self.store = store
@@ -31,7 +33,7 @@ public struct LibraryView: View {
                     emptyState
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: columns, spacing: 2) {
+                        LazyVGrid(columns: columns, spacing: gridGap) {
                             ForEach(store.items) { photo in
                                 NavigationLink {
                                     EditorView(store: store, startPhotoID: photo.id,
@@ -53,7 +55,7 @@ public struct LibraryView: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, 2)
+                        .padding(.horizontal, gridGap)
                         // Leave room for the floating glass nav so the grid
                         // scrolls cleanly under it.
                         .padding(.top, 72)
@@ -166,7 +168,8 @@ public struct LibraryView: View {
         }
         .aspectRatio(1, contentMode: .fill)
         .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        // Square cells (no corner radius) so the 1.5pt gaps read as clean
+        // thin black grid lines, Apple Photos style.
         // A graded photo carries a small, subtle cyan mark so it reads as
         // "AI" at a glance — accent stays rare per DESIGN.md.
         .overlay(alignment: .bottomTrailing) {

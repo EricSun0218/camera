@@ -298,9 +298,6 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
 public struct RootView: View {
     @StateObject private var vm = RootViewModel()
 
-    // AI button attract-animation state.
-    @State private var aiPulse = false       // breathing scale
-    @State private var aiRipple = false      // radiating ring
     @State private var showLibrary = false
 
     public init() {}
@@ -405,51 +402,16 @@ public struct RootView: View {
         .disabled(isBusy)
     }
 
-    /// True only when the button should beg for a tap (idle, not busy/analyzing/aligning).
-    private var aiIdle: Bool {
-        switch vm.state {
-        case .idle, .done: return true
-        default: return false
-        }
-    }
 
     private var aiButton: some View {
         Button(action: { vm.toggleAIGuidance() }) {
-            ZStack {
-                // Radiating ring — strong "tap me" signal, idle only.
-                if aiIdle {
-                    Circle()
-                        .stroke(Color.cyan, lineWidth: 2)
-                        .frame(width: 54, height: 54)
-                        .scaleEffect(aiRipple ? 1.9 : 1.0)
-                        .opacity(aiRipple ? 0.0 : 0.7)
-                }
-                // Cyan glow behind the glass.
-                Circle()
-                    .fill(Color.cyan)
-                    .frame(width: 54, height: 54)
-                    .blur(radius: aiIdle && aiPulse ? 16 : 9)
-                    .opacity(aiIdle ? 0.55 : 0.3)
-                // Core button — cyan-tinted interactive glass circle.
-                Image(systemName: aiIcon)
-                    .font(.system(size: 22, weight: aiIdle ? .semibold : .medium))
-                    .foregroundStyle(.white)
-                    .symbolEffect(.variableColor.iterative, isActive: aiIdle)
-                    .frame(width: 54, height: 54)
-                    .glassEffect(.regular.tint(.cyan).interactive(), in: .circle)
-            }
-            // Gentle breathing scale, idle only.
-            .scaleEffect(aiIdle && aiPulse ? 1.10 : 1.0)
+            Image(systemName: aiIcon)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 54, height: 54)
+                .glassEffect(.regular.tint(.cyan).interactive(), in: .circle)
         }
         .disabled(isBusy)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
-                aiPulse = true
-            }
-            withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) {
-                aiRipple = true
-            }
-        }
     }
 
     private var galleryButton: some View {
@@ -479,7 +441,7 @@ public struct RootView: View {
     private var aiIcon: String {
         switch vm.state {
         case .analyzing, .aligning: return "xmark"
-        default: return "sparkles"
+        default: return "viewfinder"  // AI composition framing
         }
     }
 }
