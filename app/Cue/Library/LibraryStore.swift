@@ -13,15 +13,16 @@ public enum LibraryStoreError: Error {
 }
 
 /// In-app photo library. Captures land here (not the Camera Roll); from the
-/// library a photo can be re-graded and exported out to Photos.
+/// library a photo can be AI-graded and exported out to Photos.
 ///
-/// Persists to `Documents/CueLibrary/`:
-/// - JPEG image files (`<uuid>_orig.jpg`, `<uuid>_v<n>.jpg`)
-/// - metadata in `manifest.json` (`[LibraryItem]`)
+/// Originals and graded results are flat siblings — every entry is a
+/// `LibraryPhoto`. Persists to `Documents/CueLibrary/`:
+/// - JPEG image files (`<uuid>.jpg`)
+/// - metadata in `manifest.json` (`[LibraryPhoto]`)
 @MainActor
 public final class LibraryStore: ObservableObject {
     /// Newest first.
-    @Published public private(set) var items: [LibraryItem] = []
+    @Published public private(set) var items: [LibraryPhoto] = []
 
     private static let log = Logger(subsystem: "com.ericsun.cue", category: "library")
     private let dir: URL
@@ -58,7 +59,7 @@ public final class LibraryStore: ObservableObject {
             return
         }
         // Manifest exists and decodes — normal path.
-        if let decoded = try? decoder.decode([LibraryItem].self, from: data) {
+        if let decoded = try? decoder.decode([LibraryPhoto].self, from: data) {
             items = decoded
             return
         }
@@ -77,38 +78,27 @@ public final class LibraryStore: ObservableObject {
         items = rebuildFromDisk()
     }
 
-    /// Reconstruct minimal `LibraryItem`s by scanning the library directory for
-    /// `<uuid>_orig.jpg` originals and their `<uuid>_v<n>.jpg` variants.
-    private func rebuildFromDisk() -> [LibraryItem] {
+    /// Reconstruct minimal `LibraryPhoto`s by scanning the library directory for
+    /// `<uuid>.jpg` files. On rebuild we can't know which photos were graded —
+    /// every recovered photo is treated as an un-graded original.
+    private func rebuildFromDisk() -> [LibraryPhoto] {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else {
             return []
         }
-        let origSuffix = "_orig.jpg"
-        var rebuilt: [LibraryItem] = []
-        for name in names where name.hasSuffix(origSuffix) {
-            let idString = String(name.dropLast(origSuffix.count))
+        var rebuilt: [LibraryPhoto] = []
+        for name in names where name.hasSuffix(".jpg") {
+            let idString = String(name.dropLast(".jpg".count))
             guard let id = UUID(uuidString: idString) else { continue }
-            let createdAt = (try? FileManager.default.attributesOfItem(
-                atPath: libraryURL(name).path)[.creationDate] as? Date) ?? Date()
-            // Collect variant files for this id: "<uuid>_v<n>.jpg".
-            let variantPrefix = "\(idString)_v"
-            let variantNames = names
-                .filter { $0.hasPrefix(variantPrefix) && $0.hasSuffix(".jpg") }
-                .sorted()
-            let variants: [GradeVariant] = variantNames.map { vName in
-                GradeVariant(
-                    id: UUID(), createdAt: createdAt, imageFilename: vName,
-                    scene: "recovered", lighting: "recovered", rationale: "recovered"
-                )
-            }
-            rebuilt.append(LibraryItem(
+            let createdAt = ((try? FileManager.default.attributesOfItem(
+                atPath: libraryURL(name).path))?[.creationDate] as? Date) ?? Date()
+            rebuilt.append(LibraryPhoto(
                 id: id, createdAt: createdAt,
-                originalFilename: name, variants: variants
+                filename: name, sourceFilename: name, isGraded: false
             ))
         }
         // Newest first, matching the normal ordering invariant.
         rebuilt.sort { $0.createdAt > $1.createdAt }
-        Self.log.error("loadManifest: rebuilt \(rebuilt.count, privacy: .public) item(s) from disk")
+        Self.log.error("loadManifest: rebuilt \(rebuilt.count, privacy: .public) photo(s) from disk")
         return rebuilt
     }
 
@@ -177,63 +167,62 @@ public final class LibraryStore: ObservableObject {
 
     // MARK: - Mutations
 
-    /// Persist a new capture: original + first graded variant.
-    /// Returns the item id, or `nil` if writing either image file failed (in
+    /// Persist a new capture as an un-graded original `LibraryPhoto`.
+    /// Returns the photo id, or `nil` if writing the image file failed (in
     /// which case nothing is recorded in the manifest and no files are left).
     /// The capture is stored UN-graded — grading is a manual action in the editor.
     @discardableResult
     public func addCapture(original: CGImage) -> UUID? {
         let id = UUID()
         let now = Date()
-        let originalName = "\(id.uuidString)_orig.jpg"
+        let name = "\(id.uuidString).jpg"
 
-        guard writeJPEG(original, to: originalName) else {
+        guard writeJPEG(original, to: name) else {
             Self.log.error("addCapture: original write failed, aborting insert")
             return nil
         }
 
-        let item = LibraryItem(
-            id: id, createdAt: now, originalFilename: originalName, variants: []
+        let photo = LibraryPhoto(
+            id: id, createdAt: now, filename: name,
+            sourceFilename: name, isGraded: false
         )
-        items.insert(item, at: 0)
+        items.insert(photo, at: 0)
         saveManifest()
         return id
     }
 
-    /// Append a new graded variant to an existing item.
-    /// Returns `true` on success; if the image write fails nothing is recorded.
+    /// Persist an AI-graded result as its OWN new library photo — a sibling of
+    /// the source, not a nested variant. `sourceFilename` points back at the
+    /// true original (`source.sourceFilename`) so re-grading never double-grades.
+    /// Returns the new photo id, or `nil` if the image write failed (in which
+    /// case nothing is recorded and no orphan file is left on disk).
     @discardableResult
-    public func addVariant(itemID: UUID, graded: CGImage, analysis: SceneAnalysis) -> Bool {
-        guard let idx = items.firstIndex(where: { $0.id == itemID }) else { return false }
-        let n = items[idx].variants.count
-        let variantName = "\(itemID.uuidString)_v\(n).jpg"
+    public func addGrade(source: LibraryPhoto, graded: CGImage) -> UUID? {
+        let id = UUID()
+        let name = "\(id.uuidString).jpg"
 
-        guard writeJPEG(graded, to: variantName) else {
-            Self.log.error("addVariant: variant write failed, aborting insert")
+        guard writeJPEG(graded, to: name) else {
+            Self.log.error("addGrade: graded write failed, aborting insert")
             // Remove any partially-written file so it doesn't orphan on disk.
-            try? FileManager.default.removeItem(at: libraryURL(variantName))
-            return false
+            try? FileManager.default.removeItem(at: libraryURL(name))
+            return nil
         }
 
-        let variant = GradeVariant(
-            id: UUID(), createdAt: Date(), imageFilename: variantName,
-            scene: analysis.scene.rawValue, lighting: analysis.lighting.rawValue,
-            rationale: analysis.rationale
+        let photo = LibraryPhoto(
+            id: id, createdAt: Date(), filename: name,
+            sourceFilename: source.sourceFilename, isGraded: true
         )
-        items[idx].variants.append(variant)
+        items.insert(photo, at: 0)
         saveManifest()
-        return true
+        return id
     }
 
-    /// Remove an item and all of its image files.
-    public func delete(_ itemID: UUID) {
-        guard let idx = items.firstIndex(where: { $0.id == itemID }) else { return }
-        let item = items[idx]
-        var names = [item.originalFilename]
-        names.append(contentsOf: item.variants.map(\.imageFilename))
-        for name in names {
-            try? FileManager.default.removeItem(at: libraryURL(name))
-        }
+    /// Remove one photo and its image file. Originals and grades are
+    /// independent siblings — deleting a photo never cascades to its source.
+    public func delete(_ id: UUID) {
+        guard let idx = items.firstIndex(where: { $0.id == id }) else { return }
+        let photo = items[idx]
+        try? FileManager.default.removeItem(at: libraryURL(photo.filename))
         items.remove(at: idx)
         saveManifest()
     }

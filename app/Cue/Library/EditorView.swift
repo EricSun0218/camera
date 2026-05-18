@@ -1,37 +1,34 @@
 import SwiftUI
 import CoreImage
 
-/// Editor for one library item: view the original or any graded variant,
-/// re-roll the AI grade, and export the selected image to Photos.
+/// Full-library photo detail viewer. The current photo fills the screen;
+/// swipe it left/right or tap the bottom filmstrip — which shows the WHOLE
+/// library, Apple Photos style — to move between photos. AI Grade adds a new
+/// graded entry to the library and jumps to it.
 public struct EditorView: View {
     @ObservedObject var store: LibraryStore
-    let itemID: UUID
     let backendClient: BackendClient
 
-    /// nil = original selected; otherwise the selected variant id.
-    @State private var selectedVariantID: UUID?
+    @Environment(\.dismiss) private var dismiss
+
+    /// Cue Cyan — the single accent. Used for the current selection.
+    private static let accent = Color(red: 0.239, green: 0.839, blue: 0.902)
+
+    /// Which photo is currently shown.
+    @State private var currentID: UUID
     @State private var isGrading = false
     @State private var errorBanner: String?
     @State private var savedConfirmation = false
 
-    public init(store: LibraryStore, itemID: UUID, backendClient: BackendClient) {
+    public init(store: LibraryStore, startPhotoID: UUID, backendClient: BackendClient) {
         self.store = store
-        self.itemID = itemID
         self.backendClient = backendClient
+        _currentID = State(initialValue: startPhotoID)
     }
 
-    private var item: LibraryItem? {
-        store.items.first(where: { $0.id == itemID })
-    }
-
-    /// Filename of the currently-selected image (original or a variant).
-    private var selectedFilename: String? {
-        guard let item else { return nil }
-        if let vid = selectedVariantID,
-           let v = item.variants.first(where: { $0.id == vid }) {
-            return v.imageFilename
-        }
-        return item.originalFilename
+    /// The currently-displayed photo, or `nil` if it no longer exists.
+    private var currentPhoto: LibraryPhoto? {
+        store.items.first(where: { $0.id == currentID })
     }
 
     public var body: some View {
@@ -47,10 +44,7 @@ public struct EditorView: View {
                         .padding(.top, 8)
                 }
 
-                Spacer(minLength: 0)
-                mainImage
-                Spacer(minLength: 0)
-
+                pager
                 filmstrip
                 actionBar
             }
@@ -71,13 +65,39 @@ public struct EditorView: View {
                     .transition(.opacity)
             }
         }
+        // If the library empties or the current photo vanishes, leave gracefully.
+        .onChange(of: store.items) { _, items in
+            if items.isEmpty {
+                dismiss()
+            } else if !items.contains(where: { $0.id == currentID }) {
+                currentID = items[0].id
+            }
+        }
+        .onAppear {
+            if store.items.isEmpty {
+                dismiss()
+            } else if currentPhoto == nil {
+                currentID = store.items[0].id
+            }
+        }
     }
 
-    // MARK: - Image
+    // MARK: - Main image (swipeable pager)
+
+    private var pager: some View {
+        TabView(selection: $currentID) {
+            ForEach(store.items) { photo in
+                pageImage(photo)
+                    .tag(photo.id)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 
     @ViewBuilder
-    private var mainImage: some View {
-        if let filename = selectedFilename, let cg = store.loadThumbnail(filename, maxPixel: 2000) {
+    private func pageImage(_ photo: LibraryPhoto) -> some View {
+        if let cg = store.loadThumbnail(photo.filename, maxPixel: 2000) {
             Image(decorative: cg, scale: 1, orientation: .up)
                 .resizable()
                 .scaledToFit()
@@ -89,75 +109,73 @@ public struct EditorView: View {
         }
     }
 
-    // MARK: - Filmstrip
+    // MARK: - Filmstrip (the whole library)
 
     private var filmstrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                if let item {
-                    thumb(filename: item.originalFilename,
-                          label: "Original",
-                          isSelected: selectedVariantID == nil) {
-                        selectedVariantID = nil
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(store.items) { photo in
+                        thumb(photo: photo, isSelected: photo.id == currentID)
+                            .id(photo.id)
                     }
-                    ForEach(Array(item.variants.enumerated()), id: \.element.id) { idx, v in
-                        thumb(filename: v.imageFilename,
-                              label: "Grade \(idx + 1)",
-                              isSelected: selectedVariantID == v.id) {
-                            selectedVariantID = v.id
-                        }
-                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+            .onChange(of: currentID) { _, id in
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    proxy.scrollTo(id, anchor: .center)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-        }
-    }
-
-    private func thumb(filename: String, label: String,
-                       isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                ZStack {
-                    Rectangle().fill(Color.white.opacity(0.06))
-                    if let cg = store.loadThumbnail(filename, maxPixel: 160) {
-                        Image(decorative: cg, scale: 1, orientation: .up)
-                            .resizable()
-                            .scaledToFill()
-                    }
-                }
-                .frame(width: 58, height: 58)
-                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .stroke(isSelected ? Color.cyan : Color.clear,
-                                lineWidth: 2.5)
-                )
-                .opacity(isSelected ? 1 : 0.55)
-                Text(label)
-                    .font(.caption2.weight(isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? .cyan : .white.opacity(0.55))
+            .onAppear {
+                proxy.scrollTo(currentID, anchor: .center)
             }
         }
     }
 
-    // MARK: - Actions
+    private func thumb(photo: LibraryPhoto, isSelected: Bool) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                currentID = photo.id
+            }
+        } label: {
+            ZStack {
+                Rectangle().fill(Color.white.opacity(0.06))
+                if let cg = store.loadThumbnail(photo.filename, maxPixel: 160) {
+                    Image(decorative: cg, scale: 1, orientation: .up)
+                        .resizable()
+                        .scaledToFill()
+                }
+            }
+            .frame(width: 54, height: 54)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(isSelected ? Self.accent : Color.clear, lineWidth: 2.5)
+            )
+            .opacity(isSelected ? 1 : 0.5)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Action bar
 
     /// Floating glass control cluster: Download / AI Grade (hero) / Share.
     private var actionBar: some View {
         GlassEffectContainer(spacing: 10) {
             HStack(spacing: 10) {
-                // Download — export selected image to Camera Roll.
+                // Download — export the current photo to the Camera Roll.
                 Button {
                     Task { await download() }
                 } label: {
                     actionLabel(icon: "square.and.arrow.down", label: "Download")
                 }
                 .buttonStyle(.glass)
-                .disabled(isGrading)
+                .disabled(isGrading || currentPhoto == nil)
 
                 // AI Grade — the hero action; press again to re-roll.
-                Button(action: { Task { await regrade() } }) {
+                Button(action: { Task { await grade() } }) {
                     VStack(spacing: 5) {
                         if isGrading {
                             ProgressView().tint(.white).frame(height: 21)
@@ -172,12 +190,12 @@ public struct EditorView: View {
                     .foregroundStyle(.white)
                 }
                 .buttonStyle(.glassProminent)
-                .tint(.cyan)
-                .disabled(isGrading)
+                .tint(Self.accent)
+                .disabled(isGrading || currentPhoto == nil)
 
-                // Share — system share sheet for the selected image file.
-                if let filename = selectedFilename {
-                    ShareLink(item: store.libraryURL(filename)) {
+                // Share — system share sheet for the current photo file.
+                if let photo = currentPhoto {
+                    ShareLink(item: store.libraryURL(photo.filename)) {
                         actionLabel(icon: "square.and.arrow.up", label: "Share")
                     }
                     .buttonStyle(.glass)
@@ -206,11 +224,15 @@ public struct EditorView: View {
         .foregroundStyle(.white)
     }
 
-    /// Grade the ORIGINAL image — pressing again re-rolls (backend temperature 0.7).
-    private func regrade() async {
-        guard let item, !isGrading else { return }
-        guard let original = store.loadImage(item.originalFilename) else {
-            errorBanner = "Couldn't load the original image."
+    // MARK: - Grading
+
+    /// Grade the CURRENT photo. Always grades its `sourceFilename` (the true
+    /// original), so re-pressing on an already-graded photo re-rolls cleanly.
+    /// The result becomes a NEW library entry and is shown immediately.
+    private func grade() async {
+        guard let photo = currentPhoto, !isGrading else { return }
+        guard let original = store.loadImage(photo.sourceFilename) else {
+            errorBanner = "Couldn't load the source image."
             return
         }
         isGrading = true
@@ -227,27 +249,36 @@ public struct EditorView: View {
         }
         do {
             let analysis = try await backendClient.grade(imageB64: b64)
+            if analysis.degraded == true {
+                errorBanner = "Color grading unavailable"
+                isGrading = false
+                return
+            }
             let graded = CIPipeline.apply(analysis.grade, to: originalCI)
-            guard let gradedCG = SharedCI.context.createCGImage(graded, from: graded.extent) else {
+            guard let gradedCG = SharedCI.cgImage(from: graded) else {
                 errorBanner = "Rendering the graded image failed."
                 isGrading = false
                 return
             }
-            store.addVariant(itemID: itemID, graded: gradedCG, analysis: analysis)
-            // Select the new variant.
-            selectedVariantID = store.items.first(where: { $0.id == itemID })?
-                .variants.last?.id
+            if let newID = store.addGrade(source: photo, graded: gradedCG) {
+                // Jump to the freshly graded photo so the user sees the result.
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    currentID = newID
+                }
+            } else {
+                errorBanner = "Couldn't save the graded photo."
+            }
         } catch {
             errorBanner = "AI grade failed: \(error.localizedDescription)"
         }
         isGrading = false
     }
 
-    /// Export the currently-selected image to the Camera Roll.
+    /// Export the current photo to the Camera Roll.
     private func download() async {
-        guard let filename = selectedFilename else { return }
+        guard let photo = currentPhoto else { return }
         do {
-            try await store.exportToPhotos(filename: filename)
+            try await store.exportToPhotos(filename: photo.filename)
             withAnimation { savedConfirmation = true }
             try? await Task.sleep(nanoseconds: 1_800_000_000)
             withAnimation { savedConfirmation = false }

@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// In-app photo library: a grid of captures. Tap a cell to open the editor
-/// where the photo can be re-graded and exported.
+/// In-app photo library: a dense grid of every photo — originals and AI-graded
+/// results sit side by side as siblings. Tap a cell to open the photo detail
+/// viewer, where the whole library can be browsed and re-graded.
 public struct LibraryView: View {
     @ObservedObject var store: LibraryStore
     let dismiss: () -> Void
@@ -31,21 +32,21 @@ public struct LibraryView: View {
                 } else {
                     ScrollView {
                         LazyVGrid(columns: columns, spacing: 2) {
-                            ForEach(store.items) { item in
+                            ForEach(store.items) { photo in
                                 NavigationLink {
-                                    EditorView(store: store, itemID: item.id,
+                                    EditorView(store: store, startPhotoID: photo.id,
                                                backendClient: backendClient)
                                 } label: {
-                                    cell(for: item)
+                                    cell(for: photo)
                                 }
                                 .contextMenu {
                                     Button {
-                                        saveToPhotos(item)
+                                        saveToPhotos(photo)
                                     } label: {
                                         Label("Save to Photos", systemImage: "square.and.arrow.down")
                                     }
                                     Button(role: .destructive) {
-                                        store.delete(item.id)
+                                        store.delete(photo.id)
                                     } label: {
                                         Label("Delete", systemImage: "trash")
                                     }
@@ -114,9 +115,9 @@ public struct LibraryView: View {
         }
     }
 
-    /// Export the photo (latest graded variant, or the original) to Photos.
-    private func saveToPhotos(_ item: LibraryItem) {
-        let filename = item.displayFilename
+    /// Export the photo to the user's Photos library.
+    private func saveToPhotos(_ photo: LibraryPhoto) {
+        let filename = photo.filename
         Task {
             do {
                 try await store.exportToPhotos(filename: filename)
@@ -150,11 +151,10 @@ public struct LibraryView: View {
     }
 
     @ViewBuilder
-    private func cell(for item: LibraryItem) -> some View {
-        let filename: String? = item.displayFilename
+    private func cell(for photo: LibraryPhoto) -> some View {
         ZStack {
             Rectangle().fill(Color.white.opacity(0.06))
-            if let filename, let cg = store.loadThumbnail(filename, maxPixel: 400) {
+            if let cg = store.loadThumbnail(photo.filename, maxPixel: 400) {
                 Image(decorative: cg, scale: 1, orientation: .up)
                     .resizable()
                     .scaledToFill()
@@ -167,5 +167,17 @@ public struct LibraryView: View {
         .aspectRatio(1, contentMode: .fill)
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        // A graded photo carries a small, subtle cyan mark so it reads as
+        // "AI" at a glance — accent stays rare per DESIGN.md.
+        .overlay(alignment: .bottomTrailing) {
+            if photo.isGraded {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.239, green: 0.839, blue: 0.902))
+                    .padding(4)
+                    .background(.black.opacity(0.35), in: .circle)
+                    .padding(4)
+            }
+        }
     }
 }
