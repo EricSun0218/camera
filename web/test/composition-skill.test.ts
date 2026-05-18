@@ -25,7 +25,7 @@ describe('composition skill', () => {
 
   it('keeps the three subject types', () => {
     for (const t of ['person', 'scene', 'empty']) {
-      expect(COMPOSITION_SKILL).toContain(t)
+      expect(COMPOSITION_SKILL).toContain(`"${t}"`)
     }
   })
 })
