@@ -155,6 +155,8 @@ public final class CameraSession: NSObject {
     /// Refresh the zoom mapping for `device` and pin it to the main "1x" lens.
     /// Called on `sessionQueue` whenever the active device changes — otherwise a
     /// virtual device would start at raw 1.0 (the ultra-wide / 0.5x).
+    /// Safe to call inside a `session.beginConfiguration()` block — device-configuration
+    /// locks are independent of session configuration.
     private func updateZoomState(for device: AVCaptureDevice) {
         let map = Self.zoomMapping(for: device)
         zoomStateLock.withLock {
@@ -276,7 +278,7 @@ public final class CameraSession: NSObject {
             guard let self, let device = self.videoDeviceInput?.device else { return }
             let map = self.zoomStateLock.withLock { self._zoomMap }
             let clampedOptical = map.clampOptical(optical)
-            let raw = map.rawFor(optical: optical)
+            let raw = map.rawFor(optical: clampedOptical)
             do {
                 try device.lockForConfiguration()
                 device.ramp(toVideoZoomFactor: raw, withRate: 4.0)
