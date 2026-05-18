@@ -333,15 +333,19 @@ public struct RootView: View {
 
                 VStack {
                     if let s = vm.statusBanner {
-                        Text(s).font(.footnote).padding(.horizontal, 14).padding(.vertical, 8)
-                            .background(.black.opacity(0.6)).clipShape(Capsule())
-                            .foregroundStyle(.white).padding(.top, 60)
+                        Text(s).font(.footnote)
+                            .padding(.horizontal, 16).padding(.vertical, 9)
+                            .foregroundStyle(.white)
+                            .glassEffect(.regular, in: .capsule)
+                            .padding(.top, 60)
                     }
                     Spacer()
-                    HStack(spacing: 0) {
-                        galleryButton.frame(maxWidth: .infinity)
-                        shutterButton
-                        aiButton.frame(maxWidth: .infinity)
+                    GlassEffectContainer(spacing: 24) {
+                        HStack(spacing: 0) {
+                            galleryButton.frame(maxWidth: .infinity)
+                            shutterButton
+                            aiButton.frame(maxWidth: .infinity)
+                        }
                     }
                     .padding(.horizontal, 36)
                     .padding(.bottom, 28)
@@ -390,8 +394,11 @@ public struct RootView: View {
             vm.shutterTap()
         }) {
             ZStack {
-                Circle().stroke(Color.white, lineWidth: 4).frame(width: 76, height: 76)
-                Circle().fill(Color.white).frame(width: 64, height: 64)
+                // Classic white camera shutter ring — an established affordance,
+                // intentionally NOT glass.
+                Circle().stroke(Color.white, lineWidth: 4).frame(width: 78, height: 78)
+                Circle().fill(Color.white).frame(width: 66, height: 66)
+                    .shadow(color: .black.opacity(0.35), radius: 6)
                 if isBusy { ProgressView().tint(.black) }
             }
         }
@@ -413,21 +420,23 @@ public struct RootView: View {
                 if aiIdle {
                     Circle()
                         .stroke(Color.cyan, lineWidth: 2)
-                        .frame(width: 52, height: 52)
+                        .frame(width: 54, height: 54)
                         .scaleEffect(aiRipple ? 1.9 : 1.0)
                         .opacity(aiRipple ? 0.0 : 0.7)
                 }
-                // Core button.
+                // Cyan glow behind the glass.
                 Circle()
-                    .fill(LinearGradient(colors: [.cyan, .blue],
-                                          startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 52, height: 52)
-                    .shadow(color: .cyan.opacity(aiIdle ? 0.9 : 0.5),
-                            radius: aiIdle && aiPulse ? 18 : 10)
+                    .fill(Color.cyan)
+                    .frame(width: 54, height: 54)
+                    .blur(radius: aiIdle && aiPulse ? 16 : 9)
+                    .opacity(aiIdle ? 0.55 : 0.3)
+                // Core button — cyan-tinted interactive glass circle.
                 Image(systemName: aiIcon)
                     .font(.system(size: 22, weight: aiIdle ? .semibold : .medium))
                     .foregroundStyle(.white)
                     .symbolEffect(.variableColor.iterative, isActive: aiIdle)
+                    .frame(width: 54, height: 54)
+                    .glassEffect(.regular.tint(.cyan).interactive(), in: .circle)
             }
             // Gentle breathing scale, idle only.
             .scaleEffect(aiIdle && aiPulse ? 1.10 : 1.0)
@@ -449,22 +458,20 @@ public struct RootView: View {
             showLibrary = true
         }) {
             ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.white.opacity(0.85), lineWidth: 1.6)
-                    .frame(width: 48, height: 48)
                 if let last = vm.lastThumbnail {
                     Image(decorative: last, scale: 1, orientation: .up)
                         .resizable()
                         .scaledToFill()
                         .frame(width: 44, height: 44)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(Circle())
                 } else {
                     Image(systemName: "photo.on.rectangle.angled")
                         .font(.system(size: 20, weight: .medium))
                         .foregroundStyle(.white.opacity(0.95))
                 }
             }
-            .shadow(color: .black.opacity(0.4), radius: 6)
+            .frame(width: 54, height: 54)
+            .glassEffect(.regular.interactive(), in: .circle)
         }
         .disabled(isBusy)
     }

@@ -40,21 +40,25 @@ public struct PermissionGate<Content: View>: View {
     private var deniedView: some View {
         VStack(spacing: 24) {
             Image(systemName: "camera.slash.fill")
-                .font(.system(size: 64))
+                .font(.system(size: 64, weight: .light))
+                .foregroundStyle(.white.opacity(0.85))
             Text("Camera Access Needed")
                 .font(.title2.weight(.semibold))
+                .foregroundStyle(.white)
             Text("Cue needs the camera to shoot and auto-grade your photos.\nEnable camera access in Settings.")
                 .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(0.6))
                 .padding(.horizontal, 32)
             Button("Open Settings") {
                 if let url = URL(string: UIApplication.openSettingsURLString) {
                     UIApplication.shared.open(url)
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
+            .tint(.cyan)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.black)
+        .background(Color.black)
+        .preferredColorScheme(.dark)
     }
 }

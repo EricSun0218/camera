@@ -10,10 +10,11 @@ public struct LibraryView: View {
 
     @State private var toast: String?
 
+    /// Dense 3-column grid, 2pt gaps — matches the iOS 26 Photos app Library tab.
     private let columns = [
-        GridItem(.flexible(), spacing: 3),
-        GridItem(.flexible(), spacing: 3),
-        GridItem(.flexible(), spacing: 3),
+        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 2),
     ]
 
     public init(store: LibraryStore, dismiss: @escaping () -> Void) {
@@ -29,7 +30,7 @@ public struct LibraryView: View {
                     emptyState
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: columns, spacing: 3) {
+                        LazyVGrid(columns: columns, spacing: 2) {
                             ForEach(store.items) { item in
                                 NavigationLink {
                                     EditorView(store: store, itemID: item.id,
@@ -51,9 +52,16 @@ public struct LibraryView: View {
                                 }
                             }
                         }
-                        .padding(3)
+                        .padding(.horizontal, 2)
+                        // Leave room for the floating glass nav so the grid
+                        // scrolls cleanly under it.
+                        .padding(.top, 72)
+                        .padding(.bottom, 8)
                     }
                 }
+
+                // Floating glass nav — pinned top, grid scrolls beneath it.
+                floatingNav
 
                 if let toast {
                     VStack {
@@ -61,26 +69,49 @@ public struct LibraryView: View {
                         Text(toast)
                             .font(.footnote.weight(.medium))
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 16).padding(.vertical, 10)
-                            .background(.black.opacity(0.8), in: Capsule())
-                            .padding(.bottom, 40)
+                            .padding(.horizontal, 18).padding(.vertical, 11)
+                            .glassEffect(.regular, in: .capsule)
+                            .padding(.bottom, 44)
                     }
                     .transition(.opacity)
                 }
             }
-            .navigationTitle("Library")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") { dismiss() }
-                        .tint(.white)
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
+    }
+
+    // MARK: - Floating glass nav
+
+    private var floatingNav: some View {
+        VStack {
+            GlassEffectContainer(spacing: 10) {
+                HStack {
+                    Text("Library")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .glassEffect(.regular, in: .capsule)
+
+                    Spacer()
+
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 38, height: 38)
+                    }
+                    .glassEffect(.regular.interactive(), in: .circle)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+
+            Spacer()
+        }
     }
 
     /// Export the photo (latest graded variant, or the original) to Photos.
@@ -135,5 +166,6 @@ public struct LibraryView: View {
         }
         .aspectRatio(1, contentMode: .fill)
         .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
     }
 }

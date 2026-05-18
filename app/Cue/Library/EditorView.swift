@@ -42,9 +42,8 @@ public struct EditorView: View {
                     Text(banner)
                         .font(.footnote)
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 14).padding(.vertical, 8)
-                        .background(.red.opacity(0.8))
-                        .clipShape(Capsule())
+                        .padding(.horizontal, 16).padding(.vertical, 9)
+                        .glassEffect(.regular.tint(.red.opacity(0.55)), in: .capsule)
                         .padding(.top, 8)
                 }
 
@@ -66,9 +65,8 @@ public struct EditorView: View {
                 Text("Saved")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 9)
-                    .background(.green.opacity(0.85))
-                    .clipShape(Capsule())
+                    .padding(.horizontal, 18).padding(.vertical, 10)
+                    .glassEffect(.regular.tint(.green.opacity(0.5)), in: .capsule)
                     .padding(.top, 12)
                     .transition(.opacity)
             }
@@ -129,84 +127,83 @@ public struct EditorView: View {
                     }
                 }
                 .frame(width: 58, height: 58)
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .stroke(isSelected ? Color.cyan : Color.white.opacity(0.2),
-                                lineWidth: isSelected ? 2.5 : 1)
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(isSelected ? Color.cyan : Color.clear,
+                                lineWidth: 2.5)
                 )
+                .opacity(isSelected ? 1 : 0.55)
                 Text(label)
-                    .font(.caption2)
-                    .foregroundStyle(isSelected ? .cyan : .white.opacity(0.6))
+                    .font(.caption2.weight(isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? .cyan : .white.opacity(0.55))
             }
         }
     }
 
     // MARK: - Actions
 
+    /// Floating glass control cluster: Download / AI Grade (hero) / Share.
     private var actionBar: some View {
-        HStack(spacing: 10) {
-            // Download — export selected image to Camera Roll.
-            actionButton(icon: "square.and.arrow.down", label: "Download",
-                         tint: .white.opacity(0.12)) {
-                Task { await download() }
-            }
-            .disabled(isGrading)
-
-            // AI Grade — the hero action; press again to re-roll.
-            Button(action: { Task { await regrade() } }) {
-                VStack(spacing: 5) {
-                    if isGrading {
-                        ProgressView().tint(.white).frame(height: 20)
-                    } else {
-                        Image(systemName: "sparkles").font(.system(size: 19))
-                    }
-                    Text(isGrading ? "Grading…" : "AI Grade")
-                        .font(.system(size: 12, weight: .semibold))
+        GlassEffectContainer(spacing: 10) {
+            HStack(spacing: 10) {
+                // Download — export selected image to Camera Roll.
+                Button {
+                    Task { await download() }
+                } label: {
+                    actionLabel(icon: "square.and.arrow.down", label: "Download")
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(
-                    LinearGradient(colors: [.cyan, .blue],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                )
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .disabled(isGrading)
-
-            // Share — system share sheet for the selected image file.
-            if let filename = selectedFilename {
-                ShareLink(item: store.libraryURL(filename)) {
-                    actionLabel(icon: "square.and.arrow.up", label: "Share",
-                                tint: .white.opacity(0.12))
-                }
+                .buttonStyle(.glass)
                 .disabled(isGrading)
-            } else {
-                actionLabel(icon: "square.and.arrow.up", label: "Share",
-                            tint: .white.opacity(0.06))
+
+                // AI Grade — the hero action; press again to re-roll.
+                Button(action: { Task { await regrade() } }) {
+                    VStack(spacing: 5) {
+                        if isGrading {
+                            ProgressView().tint(.white).frame(height: 21)
+                        } else {
+                            Image(systemName: "sparkles").font(.system(size: 19))
+                        }
+                        Text(isGrading ? "Grading…" : "AI Grade")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .foregroundStyle(.white)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(.cyan)
+                .disabled(isGrading)
+
+                // Share — system share sheet for the selected image file.
+                if let filename = selectedFilename {
+                    ShareLink(item: store.libraryURL(filename)) {
+                        actionLabel(icon: "square.and.arrow.up", label: "Share")
+                    }
+                    .buttonStyle(.glass)
+                    .disabled(isGrading)
+                } else {
+                    Button {} label: {
+                        actionLabel(icon: "square.and.arrow.up", label: "Share")
+                    }
+                    .buttonStyle(.glass)
+                    .disabled(true)
                     .opacity(0.4)
+                }
             }
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
     }
 
-    private func actionButton(icon: String, label: String, tint: Color,
-                              action: @escaping () -> Void) -> some View {
-        Button(action: action) { actionLabel(icon: icon, label: label, tint: tint) }
-    }
-
-    private func actionLabel(icon: String, label: String, tint: Color) -> some View {
+    private func actionLabel(icon: String, label: String) -> some View {
         VStack(spacing: 5) {
             Image(systemName: icon).font(.system(size: 19))
             Text(label).font(.system(size: 12, weight: .semibold))
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .background(tint)
+        .padding(.vertical, 13)
         .foregroundStyle(.white)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     /// Grade the ORIGINAL image — pressing again re-rolls (backend temperature 0.7).
