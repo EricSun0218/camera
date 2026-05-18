@@ -180,31 +180,20 @@ public final class LibraryStore: ObservableObject {
     /// Persist a new capture: original + first graded variant.
     /// Returns the item id, or `nil` if writing either image file failed (in
     /// which case nothing is recorded in the manifest and no files are left).
+    /// The capture is stored UN-graded — grading is a manual action in the editor.
     @discardableResult
-    public func addCapture(original: CGImage, graded: CGImage, analysis: SceneAnalysis) -> UUID? {
+    public func addCapture(original: CGImage) -> UUID? {
         let id = UUID()
         let now = Date()
         let originalName = "\(id.uuidString)_orig.jpg"
-        let variantName  = "\(id.uuidString)_v0.jpg"
 
         guard writeJPEG(original, to: originalName) else {
             Self.log.error("addCapture: original write failed, aborting insert")
             return nil
         }
-        guard writeJPEG(graded, to: variantName) else {
-            Self.log.error("addCapture: variant write failed, aborting insert")
-            // Clean up the original we already wrote so no file orphans.
-            try? FileManager.default.removeItem(at: libraryURL(originalName))
-            return nil
-        }
 
-        let variant = GradeVariant(
-            id: UUID(), createdAt: now, imageFilename: variantName,
-            scene: analysis.scene.rawValue, lighting: analysis.lighting.rawValue,
-            rationale: analysis.rationale
-        )
         let item = LibraryItem(
-            id: id, createdAt: now, originalFilename: originalName, variants: [variant]
+            id: id, createdAt: now, originalFilename: originalName, variants: []
         )
         items.insert(item, at: 0)
         saveManifest()

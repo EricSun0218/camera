@@ -16,4 +16,8 @@ public struct LibraryItem: Codable, Identifiable, Equatable {
     public var variants: [GradeVariant]
 
     public var latestVariant: GradeVariant? { variants.last }
+
+    /// Filename to show as the item's thumbnail / default image: the latest
+    /// graded variant if any, otherwise the un-graded original.
+    public var displayFilename: String { latestVariant?.imageFilename ?? originalFilename }
 }

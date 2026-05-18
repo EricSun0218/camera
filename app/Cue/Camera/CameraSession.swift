@@ -64,6 +64,12 @@ public final class CameraSession: NSObject {
                 guard self.session.canAddOutput(self.photoOutput) else { throw CameraError.configureFailed }
                 self.session.addOutput(self.photoOutput)
                 self.photoOutput.maxPhotoQualityPrioritization = .quality
+                // The still-photo connection needs the same portrait rotation as
+                // the preview, otherwise captured photos come out landscape.
+                if let pconn = self.photoOutput.connection(with: .video),
+                   pconn.isVideoRotationAngleSupported(90) {
+                    pconn.videoRotationAngle = 90
+                }
 
                 self.session.commitConfiguration()
             } catch {

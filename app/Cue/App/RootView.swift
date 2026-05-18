@@ -23,7 +23,6 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     @Published var guidance: AIGuidance = .empty
     @Published var state: FlowState = .idle
     @Published var alignmentScore: Double = 0
-    @Published var beforeAfter: (before: CGImage, after: CGImage)?
     @Published var statusBanner: String?
     /// Most recently graded photo, shown as thumbnail on the gallery button.
     @Published var lastThumbnail: CGImage?
@@ -270,46 +269,24 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     private func process(captured: CIImage) async {
         // The photo callback arrived — the capture watchdog is no longer needed.
         cancelCaptureWatchdog()
-        state = .grading
-        let b64 = await Task.detached(priority: .userInitiated) {
-            ImageEncoder.downsampledBase64(from: captured, maxSide: 1024, quality: 0.85)
+        // No auto-grade. The shot is saved to the library as-is; the user
+        // triggers AI grading manually in the editor.
+        let originalCG = await Task.detached(priority: .userInitiated) {
+            SharedCI.cgImage(from: captured)
         }.value
-        let analysis: SceneAnalysis
-        if let b64 {
-            do {
-                analysis = try await client.grade(imageB64: b64)
-            } catch {
-                statusBanner = "Color service offline — default preset applied."
-                analysis = NeutralPreset.sceneAnalysis
-            }
+        if let originalCG {
+            lastThumbnail = originalCG
+            libraryStore.addCapture(original: originalCG)
         } else {
-            analysis = NeutralPreset.sceneAnalysis
-        }
-        // Genuine grading-service failure: still save the photo, but tell the
-        // truth that it was saved without a grade.
-        if analysis.degraded == true {
-            statusBanner = "Color grading unavailable — saved without grading"
-        }
-        let result = await Task.detached(priority: .userInitiated) {
-            let graded = CIPipeline.apply(analysis.grade, to: captured)
-            let originalCG = SharedCI.cgImage(from: captured)
-            let gradedCG   = SharedCI.cgImage(from: graded)
-            return (originalCG, gradedCG)
-        }.value
-        if let before = result.0, let after = result.1 {
-            beforeAfter = (before, after)
-            lastThumbnail = after
-            // Capture lands in the in-app library, not the Camera Roll.
-            libraryStore.addCapture(original: before, graded: after, analysis: analysis)
+            statusBanner = "Couldn't save the photo"
         }
         state = .done
         let generation = flowGeneration
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            // If the user started a new flow within 3s, this Task is stale — no-op
-            // so it can't yank them out of the new flow.
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            // If the user started a new flow within the window, this Task is
+            // stale — no-op so it can't yank them out of the new flow.
             guard generation == self.flowGeneration else { return }
-            beforeAfter = nil
             guidance = .empty
             alignmentScore = 0
             camera.setZoom(1.0)
@@ -353,10 +330,6 @@ public struct RootView: View {
                     LoadingOverlay().ignoresSafeArea()
                 }
 
-                if let (before, after) = vm.beforeAfter {
-                    BeforeAfterReveal(before: before, after: after)
-                        .ignoresSafeArea()
-                }
 
                 VStack {
                     if let s = vm.statusBanner {

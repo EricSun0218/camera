@@ -83,9 +83,9 @@ public struct LibraryView: View {
         .preferredColorScheme(.dark)
     }
 
-    /// Export the photo (latest graded variant) to the system Photos library.
+    /// Export the photo (latest graded variant, or the original) to Photos.
     private func saveToPhotos(_ item: LibraryItem) {
-        guard let filename = item.latestVariant?.imageFilename else { return }
+        let filename = item.displayFilename
         Task {
             do {
                 try await store.exportToPhotos(filename: filename)
@@ -120,7 +120,7 @@ public struct LibraryView: View {
 
     @ViewBuilder
     private func cell(for item: LibraryItem) -> some View {
-        let filename = item.latestVariant?.imageFilename
+        let filename: String? = item.displayFilename
         ZStack {
             Rectangle().fill(Color.white.opacity(0.06))
             if let filename, let cg = store.loadThumbnail(filename, maxPixel: 400) {
