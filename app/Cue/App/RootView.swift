@@ -283,7 +283,10 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     /// into range (the user has stepped the right distance), apply it and move
     /// on to alignment.
     private func updateFraming() {
-        guard case .framing = state, !framingResolving else { return }
+        guard case .framing(let since) = state, !framingResolving else { return }
+        // Ignore frames during the zoom ramp triggered on entering `.framing`
+        // (~0.5s) — measuring the subject under a moving lens is unreliable.
+        guard Date().timeIntervalSince(since) > 0.6 else { return }
         let kind: SubjectKind = guidance.subjectType == .person ? .person : .scene
         let needed = neededZoom(kind: kind)
         let minO = Double(camera.minOpticalZoom)
