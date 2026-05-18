@@ -3,7 +3,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { AIGuidanceSchema } from '@/lib/schemas'
-import { GUIDANCE_SYSTEM_PROMPT_V4 } from '@/lib/prompts'
+import { COMPOSITION_SKILL } from '@/lib/composition-skill'
 import { callVision, makeLLM, llmConfig } from '@/lib/llm'
 
 export const runtime = 'nodejs'
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
     const raw = await callVision(
       makeLLM(cfg.apiKey, cfg.baseURL),
       {
-        system: GUIDANCE_SYSTEM_PROMPT_V4,
+        system: COMPOSITION_SKILL,
         imageB64: parse.data.image_b64,
         mediaType: 'image/jpeg',
         maxTokens: 256,
