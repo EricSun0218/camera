@@ -2,14 +2,20 @@ import SwiftUI
 
 /// In-app photo library: a dense grid of every photo — originals and AI-graded
 /// results sit side by side as siblings. Tap a cell to open the photo detail
-/// viewer, where the whole library can be browsed and re-graded.
+/// viewer. Tap "Select" to multi-select photos and download or delete them.
 public struct LibraryView: View {
     @ObservedObject var store: LibraryStore
     let dismiss: () -> Void
 
     private let backendClient = BackendClient()
 
+    /// Cue Cyan — the single accent.
+    private static let accent = Color(red: 0.239, green: 0.839, blue: 0.902)
+
     @State private var toast: String?
+    @State private var selecting = false
+    @State private var selectedIDs: Set<UUID> = []
+    @State private var confirmDelete = false
 
     /// Dense 3-column grid. 1.5pt gaps read as thin black separator lines
     /// between photos — matches the iOS 26 Photos app Library tab.
@@ -32,39 +38,16 @@ public struct LibraryView: View {
                 if store.items.isEmpty {
                     emptyState
                 } else {
-                    ScrollView {
-                        LazyVGrid(columns: columns, spacing: gridGap) {
-                            ForEach(store.items) { photo in
-                                NavigationLink {
-                                    EditorView(store: store, startPhotoID: photo.id,
-                                               backendClient: backendClient)
-                                } label: {
-                                    cell(for: photo)
-                                }
-                                .contextMenu {
-                                    Button {
-                                        saveToPhotos(photo)
-                                    } label: {
-                                        Label("Save to Photos", systemImage: "square.and.arrow.down")
-                                    }
-                                    Button(role: .destructive) {
-                                        store.delete(photo.id)
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.horizontal, gridGap)
-                        // Leave room for the floating glass nav so the grid
-                        // scrolls cleanly under it.
-                        .padding(.top, 72)
-                        .padding(.bottom, 8)
-                    }
+                    grid
                 }
 
                 // Floating glass nav — pinned top, grid scrolls beneath it.
                 floatingNav
+
+                // Selection action bar — pinned bottom, only while selecting.
+                if selecting {
+                    selectionBar
+                }
 
                 if let toast {
                     VStack {
@@ -82,6 +65,50 @@ public struct LibraryView: View {
             .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
+        .confirmationDialog("Delete \(selectedIDs.count) photo\(selectedIDs.count == 1 ? "" : "s")?",
+                            isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { deleteSelected() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This can't be undone.")
+        }
+    }
+
+    // MARK: - Grid
+
+    private var grid: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: gridGap) {
+                ForEach(store.items) { photo in
+                    if selecting {
+                        photoTile(for: photo)
+                            .onTapGesture { toggle(photo.id) }
+                    } else {
+                        NavigationLink {
+                            EditorView(store: store, startPhotoID: photo.id,
+                                       backendClient: backendClient)
+                        } label: {
+                            photoTile(for: photo)
+                        }
+                        .contextMenu {
+                            Button {
+                                saveToPhotos(photo)
+                            } label: {
+                                Label("Save to Photos", systemImage: "square.and.arrow.down")
+                            }
+                            Button(role: .destructive) {
+                                store.delete(photo.id)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, gridGap)
+            .padding(.top, 72)   // clear the floating nav
+            .padding(.bottom, selecting ? 96 : 8)  // clear the selection bar
+        }
     }
 
     // MARK: - Floating glass nav
@@ -89,8 +116,10 @@ public struct LibraryView: View {
     private var floatingNav: some View {
         VStack {
             GlassEffectContainer(spacing: 10) {
-                HStack {
-                    Text("Library")
+                HStack(spacing: 10) {
+                    Text(selecting
+                         ? (selectedIDs.isEmpty ? "Select Photos" : "\(selectedIDs.count) Selected")
+                         : "Library")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 18)
@@ -99,15 +128,35 @@ public struct LibraryView: View {
 
                     Spacer()
 
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 38, height: 38)
+                    // Select / Cancel
+                    if !store.items.isEmpty {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selecting.toggle()
+                                if !selecting { selectedIDs = [] }
+                            }
+                        } label: {
+                            Text(selecting ? "Cancel" : "Select")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 16)
+                                .frame(height: 38)
+                        }
+                        .glassEffect(.regular.interactive(), in: .capsule)
                     }
-                    .glassEffect(.regular.interactive(), in: .circle)
+
+                    // Close (hidden during selection)
+                    if !selecting {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 38, height: 38)
+                        }
+                        .glassEffect(.regular.interactive(), in: .circle)
+                    }
                 }
             }
             .padding(.horizontal, 14)
@@ -117,7 +166,136 @@ public struct LibraryView: View {
         }
     }
 
-    /// Export the photo to the user's Photos library.
+    // MARK: - Selection action bar
+
+    private var selectionBar: some View {
+        VStack {
+            Spacer()
+            GlassEffectContainer(spacing: 14) {
+                HStack(spacing: 14) {
+                    selectionAction(icon: "arrow.down.to.line", label: "Download",
+                                    tint: nil) {
+                        downloadSelected()
+                    }
+                    selectionAction(icon: "trash", label: "Delete",
+                                    tint: .red) {
+                        confirmDelete = true
+                    }
+                }
+            }
+            .opacity(selectedIDs.isEmpty ? 0.4 : 1)
+            .allowsHitTesting(!selectedIDs.isEmpty)
+            .padding(.bottom, 28)
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private func selectionAction(icon: String, label: String, tint: Color?,
+                                 action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                Image(systemName: icon).font(.system(size: 16, weight: .medium))
+                Text(label).font(.system(size: 15, weight: .semibold))
+            }
+            .foregroundStyle(tint == .red ? Color.red : .white)
+            .padding(.horizontal, 22)
+            .frame(height: 50)
+        }
+        .glassEffect(.regular.interactive(), in: .capsule)
+    }
+
+    // MARK: - Cell
+
+    @ViewBuilder
+    private func photoTile(for photo: LibraryPhoto) -> some View {
+        cell(for: photo)
+            .overlay(alignment: .bottomTrailing) {
+                if selecting {
+                    selectionBadge(on: selectedIDs.contains(photo.id))
+                }
+            }
+            // Selected cells get a faint cyan inset frame.
+            .overlay {
+                if selecting && selectedIDs.contains(photo.id) {
+                    Rectangle().stroke(Self.accent, lineWidth: 2.5)
+                }
+            }
+    }
+
+    private func selectionBadge(on selected: Bool) -> some View {
+        ZStack {
+            Circle()
+                .fill(selected ? Self.accent : Color.black.opacity(0.35))
+            Circle()
+                .stroke(.white.opacity(selected ? 0 : 0.9), lineWidth: 1.5)
+            if selected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.black)
+            }
+        }
+        .frame(width: 22, height: 22)
+        .padding(6)
+    }
+
+    @ViewBuilder
+    private func cell(for photo: LibraryPhoto) -> some View {
+        // Off-main decode + cache — keeps grid scrolling smooth.
+        AsyncThumbnail(store: store, filename: photo.filename,
+                       maxPixel: 400, contentMode: .fill)
+        // .fit (not .fill) so the cell stays inside its column slot — .fill
+        // overflows the slot and swallows the grid gap.
+        .aspectRatio(1, contentMode: .fit)
+        .clipped()
+        // A graded photo carries a small, subtle cyan mark (top-leading so it
+        // never collides with the selection checkmark at bottom-trailing).
+        .overlay(alignment: .topLeading) {
+            if photo.isGraded {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Self.accent)
+                    .padding(4)
+                    .background(.black.opacity(0.35), in: .circle)
+                    .padding(4)
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    private func toggle(_ id: UUID) {
+        if selectedIDs.contains(id) { selectedIDs.remove(id) }
+        else { selectedIDs.insert(id) }
+    }
+
+    private func downloadSelected() {
+        let photos = store.items.filter { selectedIDs.contains($0.id) }
+        guard !photos.isEmpty else { return }
+        Task {
+            var ok = 0
+            for photo in photos {
+                do { try await store.exportToPhotos(filename: photo.filename); ok += 1 }
+                catch { /* keep going */ }
+            }
+            showToast(ok == photos.count
+                      ? "Saved \(ok) to Photos"
+                      : "Saved \(ok) of \(photos.count)")
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selecting = false
+                selectedIDs = []
+            }
+        }
+    }
+
+    private func deleteSelected() {
+        for id in selectedIDs { store.delete(id) }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            selecting = false
+            selectedIDs = []
+        }
+    }
+
+    /// Export one photo to the user's Photos library (context-menu path).
     private func saveToPhotos(_ photo: LibraryPhoto) {
         let filename = photo.filename
         Task {
@@ -149,31 +327,6 @@ public struct LibraryView: View {
             Text("Shoot one from the camera.")
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.6))
-        }
-    }
-
-    @ViewBuilder
-    private func cell(for photo: LibraryPhoto) -> some View {
-        // Off-main decode + cache — keeps grid scrolling smooth.
-        AsyncThumbnail(store: store, filename: photo.filename,
-                       maxPixel: 400, contentMode: .fill)
-        // .fit (not .fill) so the cell stays inside its column slot — .fill
-        // overflows the slot and swallows the grid gap.
-        .aspectRatio(1, contentMode: .fit)
-        .clipped()
-        // Square cells (no corner radius) so the grid gaps read as clean
-        // thin black separator lines, Apple Photos style.
-        // A graded photo carries a small, subtle cyan mark so it reads as
-        // "AI" at a glance — accent stays rare per DESIGN.md.
-        .overlay(alignment: .bottomTrailing) {
-            if photo.isGraded {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.239, green: 0.839, blue: 0.902))
-                    .padding(4)
-                    .background(.black.opacity(0.35), in: .circle)
-                    .padding(4)
-            }
         }
     }
 }
