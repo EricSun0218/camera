@@ -115,10 +115,12 @@ function extractBalancedObject(text: string): string | null {
 }
 
 export function makeLLM(apiKey: string, baseURL: string): OpenAI {
-  // 50s timeout — vision via cross-border reseller proxies routinely take 10–40s.
-  // Kept strictly under the route's 60s `maxDuration` so the client aborts and
-  // the route's catch/fallback wins before Vercel kills the function with a 504.
-  return new OpenAI({ apiKey, baseURL, timeout: 50_000 })
+  // 45s timeout — vision via cross-border proxies routinely take 10–40s.
+  // maxRetries: 0 is load-bearing — the SDK retries twice by default, and a
+  // timed-out attempt would retry into 45s + 45s + 45s, far past the route's
+  // 60s `maxDuration`. With no retries the single attempt aborts at 45s and
+  // the route's catch/fallback returns before Vercel kills the function (504).
+  return new OpenAI({ apiKey, baseURL, timeout: 45_000, maxRetries: 0 })
 }
 
 /** Read env config in one place so routes don't have to. */
