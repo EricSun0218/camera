@@ -97,6 +97,15 @@ import Vision
             currentOptical: 1.3)
         #expect(z == 1.3)
     }
+
+    @Test func sceneDegenerateTargetReturnsCurrent() {
+        let z = AlignmentChecker.neededOpticalZoom(
+            kind: .scene,
+            targetSize: CGSize(width: 0, height: 0),
+            detectedSize: CGSize(width: 0.2, height: 0.3),
+            currentOptical: 1.4)
+        #expect(z == 1.4)
+    }
 }
 
 @Suite("MeasuredSubject") struct MeasuredSubjectTests {

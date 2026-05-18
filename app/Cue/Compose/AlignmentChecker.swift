@@ -37,6 +37,8 @@ public enum AlignmentChecker {
     /// against the AI target size (a face box vs a full-body pose height) —
     /// callers should fall back to the backend's suggested zoom in that case.
     /// Does NOT use `trackedBox`: zoom sizing happens before an alignment session.
+    /// Only `.size` is returned, which is origin-agnostic — callers need not worry
+    /// about the differing coordinate origins of the person vs. scene sources.
     public static func measuredSubject(kind: SubjectKind,
                                        state: ComposeState) -> (size: CGSize, comparable: Bool)? {
         switch kind {
@@ -66,7 +68,7 @@ public enum AlignmentChecker {
                                          calibration: Double = poseHeightCalibration) -> Double {
         switch kind {
         case .person:
-            guard detectedSize.height > 0 else { return currentOptical }
+            guard detectedSize.height > 0, targetSize.height > 0 else { return currentOptical }
             return currentOptical * Double(targetSize.height) * calibration
                  / Double(detectedSize.height)
         case .scene:
