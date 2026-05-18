@@ -352,7 +352,7 @@ public struct RootView: View {
             .onAppear { vm.start() }
             .onDisappear { vm.stop() }
             .fullScreenCover(isPresented: $showLibrary) {
-                LibraryView(store: vm.libraryStore) { showLibrary = false }
+                PhotoBrowser(store: vm.libraryStore) { showLibrary = false }
             }
         }
     }

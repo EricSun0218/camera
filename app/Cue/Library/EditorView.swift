@@ -8,22 +8,28 @@ import CoreImage
 public struct EditorView: View {
     @ObservedObject var store: LibraryStore
     let backendClient: BackendClient
-
-    @Environment(\.dismiss) private var dismiss
+    /// Open the thumbnail grid.
+    let onShowGrid: () -> Void
+    /// Close the whole library browser.
+    let onClose: () -> Void
 
     /// Cue Cyan — the single accent. Used for the current selection.
     private static let accent = Color(red: 0.239, green: 0.839, blue: 0.902)
 
-    /// Which photo is currently shown.
-    @State private var currentID: UUID
+    /// Which photo is currently shown — owned by the parent PhotoBrowser so the
+    /// grid can change it.
+    @Binding private var currentID: UUID
     @State private var isGrading = false
     @State private var errorBanner: String?
     @State private var savedConfirmation = false
 
-    public init(store: LibraryStore, startPhotoID: UUID, backendClient: BackendClient) {
+    public init(store: LibraryStore, currentID: Binding<UUID>, backendClient: BackendClient,
+                onShowGrid: @escaping () -> Void, onClose: @escaping () -> Void) {
         self.store = store
+        self._currentID = currentID
         self.backendClient = backendClient
-        _currentID = State(initialValue: startPhotoID)
+        self.onShowGrid = onShowGrid
+        self.onClose = onClose
     }
 
     /// The currently-displayed photo, or `nil` if it no longer exists.
@@ -35,50 +41,77 @@ public struct EditorView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             VStack(spacing: 0) {
-                if let banner = errorBanner {
-                    Text(banner)
-                        .font(.footnote)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16).padding(.vertical, 9)
-                        .glassEffect(.regular.tint(.red.opacity(0.55)), in: .capsule)
-                        .padding(.top, 8)
-                }
-
                 pager
                 filmstrip
                 actionBar
             }
         }
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbarBackground(.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .preferredColorScheme(.dark)
-        .overlay(alignment: .top) {
-            if savedConfirmation {
-                Text("Saved")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 18).padding(.vertical, 10)
-                    .glassEffect(.regular.tint(.green.opacity(0.5)), in: .capsule)
-                    .padding(.top, 12)
-                    .transition(.opacity)
-            }
-        }
+        .overlay(alignment: .top) { topBar }
+        .overlay(alignment: .top) { transientBanner }
         // If the library empties or the current photo vanishes, leave gracefully.
         .onChange(of: store.items) { _, items in
             if items.isEmpty {
-                dismiss()
+                onClose()
             } else if !items.contains(where: { $0.id == currentID }) {
                 currentID = items[0].id
             }
         }
         .onAppear {
             if store.items.isEmpty {
-                dismiss()
+                onClose()
             } else if currentPhoto == nil {
                 currentID = store.items[0].id
             }
+        }
+    }
+
+    // MARK: - Top bar (grid + close)
+
+    private var topBar: some View {
+        GlassEffectContainer(spacing: 10) {
+            HStack {
+                Button(action: onShowGrid) {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                }
+                .glassEffect(.regular.interactive(), in: .circle)
+
+                Spacer()
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                }
+                .glassEffect(.regular.interactive(), in: .circle)
+            }
+            .padding(.horizontal, 14)
+        }
+        .padding(.top, 8)
+    }
+
+    /// Transient error / saved banners, shown just below the top bar.
+    @ViewBuilder
+    private var transientBanner: some View {
+        if let banner = errorBanner {
+            Text(banner)
+                .font(.footnote)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16).padding(.vertical, 9)
+                .glassEffect(.regular.tint(.red.opacity(0.55)), in: .capsule)
+                .padding(.top, 58)
+        } else if savedConfirmation {
+            Text("Saved")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18).padding(.vertical, 10)
+                .glassEffect(.regular.tint(.green.opacity(0.5)), in: .capsule)
+                .padding(.top, 58)
+                .transition(.opacity)
         }
     }
 

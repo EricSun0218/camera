@@ -1,13 +1,14 @@
 import SwiftUI
 
-/// In-app photo library: a dense grid of every photo — originals and AI-graded
-/// results sit side by side as siblings. Tap a cell to open the photo detail
-/// viewer. Tap "Select" to multi-select photos and download or delete them.
+/// Thumbnail grid of the whole library — pushed from the photo detail viewer.
+/// Tapping a cell returns to the detail viewer on that photo (`onPick`).
+/// Tap "Select" to multi-select photos and download or delete them.
 public struct LibraryView: View {
     @ObservedObject var store: LibraryStore
-    let dismiss: () -> Void
+    /// Called with the tapped photo's id — the parent returns to the detail viewer.
+    let onPick: (UUID) -> Void
 
-    private let backendClient = BackendClient()
+    @Environment(\.dismiss) private var dismissPage
 
     /// Cue Cyan — the single accent.
     private static let accent = Color(red: 0.239, green: 0.839, blue: 0.902)
@@ -26,44 +27,42 @@ public struct LibraryView: View {
          GridItem(.flexible(), spacing: gridGap)]
     }
 
-    public init(store: LibraryStore, dismiss: @escaping () -> Void) {
+    public init(store: LibraryStore, onPick: @escaping (UUID) -> Void) {
         self.store = store
-        self.dismiss = dismiss
+        self.onPick = onPick
     }
 
     public var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                if store.items.isEmpty {
-                    emptyState
-                } else {
-                    grid
-                }
-
-                // Floating glass nav — pinned top, grid scrolls beneath it.
-                floatingNav
-
-                // Selection action bar — pinned bottom, only while selecting.
-                if selecting {
-                    selectionBar
-                }
-
-                if let toast {
-                    VStack {
-                        Spacer()
-                        Text(toast)
-                            .font(.footnote.weight(.medium))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 18).padding(.vertical, 11)
-                            .glassEffect(.regular, in: .capsule)
-                            .padding(.bottom, 44)
-                    }
-                    .transition(.opacity)
-                }
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if store.items.isEmpty {
+                emptyState
+            } else {
+                grid
             }
-            .toolbar(.hidden, for: .navigationBar)
+
+            // Floating glass nav — pinned top, grid scrolls beneath it.
+            floatingNav
+
+            // Selection action bar — pinned bottom, only while selecting.
+            if selecting {
+                selectionBar
+            }
+
+            if let toast {
+                VStack {
+                    Spacer()
+                    Text(toast)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 18).padding(.vertical, 11)
+                        .glassEffect(.regular, in: .capsule)
+                        .padding(.bottom, 44)
+                }
+                .transition(.opacity)
+            }
         }
+        .toolbar(.hidden, for: .navigationBar)
         .preferredColorScheme(.dark)
         .confirmationDialog("Delete \(selectedIDs.count) photo\(selectedIDs.count == 1 ? "" : "s")?",
                             isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -80,15 +79,9 @@ public struct LibraryView: View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: gridGap) {
                 ForEach(store.items) { photo in
-                    if selecting {
-                        photoTile(for: photo)
-                            .onTapGesture { toggle(photo.id) }
-                    } else {
-                        NavigationLink {
-                            EditorView(store: store, startPhotoID: photo.id,
-                                       backendClient: backendClient)
-                        } label: {
-                            photoTile(for: photo)
+                    photoTile(for: photo)
+                        .onTapGesture {
+                            if selecting { toggle(photo.id) } else { onPick(photo.id) }
                         }
                         .contextMenu {
                             Button {
@@ -102,7 +95,6 @@ public struct LibraryView: View {
                                 Label("Delete", systemImage: "trash")
                             }
                         }
-                    }
                 }
             }
             .padding(.horizontal, gridGap)
@@ -117,6 +109,19 @@ public struct LibraryView: View {
         VStack {
             GlassEffectContainer(spacing: 10) {
                 HStack(spacing: 10) {
+                    // Back to the photo detail viewer (hidden during selection).
+                    if !selecting {
+                        Button {
+                            dismissPage()
+                        } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 38, height: 38)
+                        }
+                        .glassEffect(.regular.interactive(), in: .circle)
+                    }
+
                     Text(selecting
                          ? (selectedIDs.isEmpty ? "Select Photos" : "\(selectedIDs.count) Selected")
                          : "Library")
@@ -143,19 +148,6 @@ public struct LibraryView: View {
                                 .frame(height: 38)
                         }
                         .glassEffect(.regular.interactive(), in: .capsule)
-                    }
-
-                    // Close (hidden during selection)
-                    if !selecting {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 38, height: 38)
-                        }
-                        .glassEffect(.regular.interactive(), in: .circle)
                     }
                 }
             }
