@@ -274,16 +274,20 @@ public final class CameraSession: NSObject {
     /// The optical value is clamped to what the device supports and converted
     /// to a raw `videoZoomFactor` via the active `ZoomMapping`.
     public func setZoom(_ optical: CGFloat) {
+        // Update the optical-zoom state synchronously so callers (e.g. the
+        // framing monitor) read the *intended* zoom immediately, without
+        // waiting for the async ramp on `sessionQueue` to settle.
+        let raw: CGFloat = zoomStateLock.withLock {
+            let clampedOptical = _zoomMap.clampOptical(optical)
+            _currentOptical = clampedOptical
+            return _zoomMap.rawFor(optical: clampedOptical)
+        }
         sessionQueue.async { [weak self] in
             guard let self, let device = self.videoDeviceInput?.device else { return }
-            let map = self.zoomStateLock.withLock { self._zoomMap }
-            let clampedOptical = map.clampOptical(optical)
-            let raw = map.rawFor(optical: clampedOptical)
             do {
                 try device.lockForConfiguration()
                 device.ramp(toVideoZoomFactor: raw, withRate: 4.0)
                 device.unlockForConfiguration()
-                self.zoomStateLock.withLock { self._currentOptical = clampedOptical }
             } catch {
                 // best-effort; ignore
             }

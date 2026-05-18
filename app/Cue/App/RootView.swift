@@ -151,10 +151,10 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
                     self.framingResolving = false
                     self.state = .framing(since: Date())
                     updateFramingBanner(needed: needed, minO: minO, maxO: maxO)
-                    startFramingTimeout()
+                    startFramingTimeout(generation: flowGeneration)
                     return
                 }
-                await proceedToAlignment(kind: kind)
+                await proceedToAlignment(kind: kind, generation: flowGeneration)
             } catch {
                 flowLog.error("requestGuidance: backend failed — \(error.localizedDescription, privacy: .public)")
                 statusBanner = "AI guidance failed: \(error.localizedDescription)"
@@ -230,10 +230,14 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     /// Shared tail used by both the in-range zoom path and a resolved `.framing`
     /// step: wait for the zoom ramp to settle, then either capture (already
     /// composed) or begin the pan-alignment session.
-    private func proceedToAlignment(kind: SubjectKind) async {
+    private func proceedToAlignment(kind: SubjectKind, generation: Int) async {
         // The zoom ramp (camera.setZoom -> device.ramp) takes ~0.5s; wait for it
         // to settle before scoring alignment against a moving subject.
         try? await Task.sleep(nanoseconds: 600_000_000)
+        guard generation == flowGeneration else {
+            flowLog.info("proceedToAlignment: stale generation — dropping")
+            return
+        }
         switch state {
         case .analyzing, .framing: break
         default:
@@ -291,7 +295,10 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
                 framingTimeout?.cancel()
                 statusBanner = nil
                 camera.setZoom(CGFloat(needed))
-                Task { @MainActor in await proceedToAlignment(kind: kind) }
+                let generation = flowGeneration
+                Task { @MainActor [weak self] in
+                    await self?.proceedToAlignment(kind: kind, generation: generation)
+                }
             }
         } else {
             framingStableFrames = 0
@@ -310,17 +317,18 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
 
     /// If `.framing` lasts too long (user never moves), proceed best-effort with
     /// the clamped zoom rather than stalling forever.
-    private func startFramingTimeout() {
+    private func startFramingTimeout(generation: Int) {
         framingTimeout?.cancel()
         framingTimeout = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 8_000_000_000)
             guard let self, !Task.isCancelled else { return }
-            guard case .framing = self.state, !self.framingResolving else { return }
+            guard generation == self.flowGeneration,
+                  case .framing = self.state, !self.framingResolving else { return }
             flowLog.info("framing: timed out — proceeding best-effort")
             self.framingResolving = true
             self.statusBanner = nil
             let kind: SubjectKind = self.guidance.subjectType == .person ? .person : .scene
-            await self.proceedToAlignment(kind: kind)
+            await self.proceedToAlignment(kind: kind, generation: generation)
         }
     }
 
