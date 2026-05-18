@@ -11,6 +11,9 @@ private let flowLog = Logger(subsystem: "com.ericsun.cue", category: "flow")
 public enum FlowState: Equatable {
     case idle
     case analyzing
+    /// Zoom alone can't reach the AI target size — the user is being guided to
+    /// step back / closer. Transient: skipped entirely when zoom is in range.
+    case framing(since: Date)
     case aligning(since: Date)
     case capturing
     case grading
@@ -36,6 +39,15 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     private var latestPreview: CVPixelBuffer?
     private var alignedFrames: Int = 0
     private let alignedFramesNeeded = 9       // ~0.3 second at 30 fps
+
+    /// `.framing` bookkeeping: consecutive in-range frames seen, the resolve
+    /// guard (prevents double `proceedToAlignment`), and the step-back timeout.
+    private var framingStableFrames = 0
+    private let framingStableNeeded = 3
+    private var framingResolving = false
+    private var framingTimeout: Task<Void, Never>?
+    /// Small tolerance so a value exactly on the optical bound counts in-range.
+    private let zoomRangeEpsilon = 0.001
 
     /// Watchdog that resets a stuck `.capturing` state if the photo callback never arrives.
     private var captureWatchdog: Task<Void, Never>?
@@ -63,7 +75,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
         switch state {
         case .idle, .done:
             requestGuidance()
-        case .analyzing, .aligning:
+        case .analyzing, .aligning, .framing:
             cancelGuidance()
         default:
             break  // ignore during capturing/grading
@@ -72,8 +84,11 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
 
     private func cancelGuidance() {
         cv.endTracking()
+        framingTimeout?.cancel()
+        framingResolving = false
         guidance = .empty
         alignmentScore = 0
+        statusBanner = nil
         state = .idle
         camera.setZoom(1.0)
     }
@@ -114,7 +129,6 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
                     return
                 }
                 self.guidance = g
-                applyZoom(g.suggestedZoom)
                 if g.subjectType == .empty {
                     statusBanner = "No subject detected"
                     Task {
@@ -124,39 +138,29 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
                     state = .idle
                     return
                 }
-                // The zoom ramp (camera.setZoom -> device.ramp) takes ~0.5s; wait
-                // for it to settle before scoring alignment IoU against a moving subject.
-                try? await Task.sleep(nanoseconds: 600_000_000)
-                guard case .analyzing = state else {
-                    flowLog.info("requestGuidance: cancelled during zoom-ramp settle, dropping result")
-                    return
-                }
-                // Composition already good? Skip the aligning step and shoot now.
-                if let t = currentTarget(),
-                   AlignmentChecker.score(target: t, state: compose) >= alignThreshold {
-                    flowLog.info("requestGuidance: already well-composed — capturing immediately")
-                    self.state = .capturing
-                    startCaptureWatchdog()
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    camera.captureWithAutofocus()
-                    return
-                }
-                // Otherwise, lock onto the subject so the alignment ball tracks
-                // it smoothly (saliency re-detection jitters; tracking follows).
                 let kind: SubjectKind = g.subjectType == .person ? .person : .scene
-                self.cv.beginTracking(seed: AlignmentChecker.trackingSeed(kind: kind, state: self.compose))
-                self.state = .aligning(since: Date())
-                self.alignedFrames = 0
+                // Precisely zoom so the subject reaches the AI target size.
+                let needed = neededZoom(kind: kind)
+                let minO = Double(camera.minOpticalZoom)
+                let maxO = Double(camera.maxOpticalZoom)
+                camera.setZoom(CGFloat(needed))  // setZoom clamps internally
+                if needed < minO - zoomRangeEpsilon || needed > maxO + zoomRangeEpsilon {
+                    // Zoom alone can't reach the target size — guide the user.
+                    flowLog.info("requestGuidance: zoom out of range (\(needed)) — entering .framing")
+                    self.framingStableFrames = 0
+                    self.framingResolving = false
+                    self.state = .framing(since: Date())
+                    updateFramingBanner(needed: needed, minO: minO, maxO: maxO)
+                    startFramingTimeout()
+                    return
+                }
+                await proceedToAlignment(kind: kind)
             } catch {
                 flowLog.error("requestGuidance: backend failed — \(error.localizedDescription, privacy: .public)")
                 statusBanner = "AI guidance failed: \(error.localizedDescription)"
                 state = .idle
             }
         }
-    }
-
-    private func applyZoom(_ factor: Double) {
-        camera.setZoom(CGFloat(max(1.0, min(factor, 3.0))))
     }
 
     // MARK: Capture watchdog
@@ -207,6 +211,52 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
         }
     }
 
+    /// The optical zoom that would bring the live subject to the AI target
+    /// size. Falls back to the backend's suggested zoom when the on-device
+    /// measurement isn't comparable to the target (e.g. only a face detected).
+    private func neededZoom(kind: SubjectKind) -> Double {
+        guard let target = currentTarget(),
+              let measured = AlignmentChecker.measuredSubject(kind: kind, state: compose),
+              measured.comparable else {
+            return guidance.suggestedZoom
+        }
+        return AlignmentChecker.neededOpticalZoom(
+            kind: kind,
+            targetSize: target.box.size,
+            detectedSize: measured.size,
+            currentOptical: Double(camera.currentOpticalZoom))
+    }
+
+    /// Shared tail used by both the in-range zoom path and a resolved `.framing`
+    /// step: wait for the zoom ramp to settle, then either capture (already
+    /// composed) or begin the pan-alignment session.
+    private func proceedToAlignment(kind: SubjectKind) async {
+        // The zoom ramp (camera.setZoom -> device.ramp) takes ~0.5s; wait for it
+        // to settle before scoring alignment against a moving subject.
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        switch state {
+        case .analyzing, .framing: break
+        default:
+            flowLog.info("proceedToAlignment: state changed — dropping")
+            return
+        }
+        // Composition already good? Skip the aligning step and shoot now.
+        if let t = currentTarget(),
+           AlignmentChecker.score(target: t, state: compose) >= alignThreshold {
+            flowLog.info("proceedToAlignment: already well-composed — capturing immediately")
+            state = .capturing
+            startCaptureWatchdog()
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            camera.captureWithAutofocus()
+            return
+        }
+        // Otherwise, lock onto the subject so the alignment ball tracks it
+        // smoothly (saliency re-detection jitters; tracking follows).
+        cv.beginTracking(seed: AlignmentChecker.trackingSeed(kind: kind, state: compose))
+        state = .aligning(since: Date())
+        alignedFrames = 0
+    }
+
     private func updateAlignment() {
         guard case .aligning = state else { return }
         guard let t = currentTarget() else { return }
@@ -220,6 +270,57 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
             }
         } else {
             alignedFrames = 0
+        }
+    }
+
+    // MARK: Framing monitor (called from preview frame ingest)
+
+    /// While `.framing`, re-measure each frame: once the needed zoom comes back
+    /// into range (the user has stepped the right distance), apply it and move
+    /// on to alignment.
+    private func updateFraming() {
+        guard case .framing = state, !framingResolving else { return }
+        let kind: SubjectKind = guidance.subjectType == .person ? .person : .scene
+        let needed = neededZoom(kind: kind)
+        let minO = Double(camera.minOpticalZoom)
+        let maxO = Double(camera.maxOpticalZoom)
+        if needed >= minO - zoomRangeEpsilon && needed <= maxO + zoomRangeEpsilon {
+            framingStableFrames += 1
+            if framingStableFrames >= framingStableNeeded {
+                framingResolving = true
+                framingTimeout?.cancel()
+                statusBanner = nil
+                camera.setZoom(CGFloat(needed))
+                Task { @MainActor in await proceedToAlignment(kind: kind) }
+            }
+        } else {
+            framingStableFrames = 0
+            updateFramingBanner(needed: needed, minO: minO, maxO: maxO)
+        }
+    }
+
+    /// Show the step-back / step-closer hint for an out-of-range zoom.
+    private func updateFramingBanner(needed: Double, minO: Double, maxO: Double) {
+        if needed < minO {
+            statusBanner = "后退一点"
+        } else if needed > maxO {
+            statusBanner = "靠近一点"
+        }
+    }
+
+    /// If `.framing` lasts too long (user never moves), proceed best-effort with
+    /// the clamped zoom rather than stalling forever.
+    private func startFramingTimeout() {
+        framingTimeout?.cancel()
+        framingTimeout = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            guard case .framing = self.state, !self.framingResolving else { return }
+            flowLog.info("framing: timed out — proceeding best-effort")
+            self.framingResolving = true
+            self.statusBanner = nil
+            let kind: SubjectKind = self.guidance.subjectType == .person ? .person : .scene
+            await self.proceedToAlignment(kind: kind)
         }
     }
 
@@ -242,6 +343,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
             self.cv.ingest(pixelBuffer: buf)
             self.compose = self.cv.state
             self.updateAlignment()
+            self.updateFraming()
         }
     }
 
@@ -266,9 +368,12 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
         case .capturing, .grading:
             return  // genuinely mid-operation
         default:
-            // idle / done / analyzing / aligning — shoot NOW, drop any in-flight guidance.
+            // idle / done / analyzing / aligning / framing — shoot NOW, drop any
+            // in-flight guidance.
             flowGeneration += 1
             cv.endTracking()
+            framingTimeout?.cancel()
+            framingResolving = false
             guidance = .empty
             alignmentScore = 0
             state = .capturing
@@ -484,7 +589,7 @@ public struct RootView: View {
 
     private var aiIcon: String {
         switch vm.state {
-        case .analyzing, .aligning: return "xmark"
+        case .analyzing, .aligning, .framing: return "xmark"
         default: return "viewfinder"  // AI composition framing
         }
     }
