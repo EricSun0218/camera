@@ -565,11 +565,17 @@ public struct RootView: View {
 
     private var aiButton: some View {
         Button(action: { vm.toggleAIGuidance() }) {
-            Image(systemName: aiIcon)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 54, height: 54)
-                .glassEffect(.regular.tint(.cyan).interactive(), in: .circle)
+            Group {
+                if aiShowsCancel {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 22, weight: .semibold))
+                } else {
+                    RobotMark()
+                }
+            }
+            .foregroundStyle(.white)
+            .frame(width: 54, height: 54)
+            .glassEffect(.regular.tint(.cyan).interactive(), in: .circle)
         }
         .disabled(isBusy)
     }
@@ -598,10 +604,46 @@ public struct RootView: View {
         .disabled(isBusy)
     }
 
-    private var aiIcon: String {
+    /// While the AI flow is running the button turns into a cancel control.
+    private var aiShowsCancel: Bool {
         switch vm.state {
-        case .analyzing, .aligning, .framing: return "xmark"
-        default: return "viewfinder"  // AI composition framing
+        case .analyzing, .aligning, .framing: return true
+        default: return false
         }
+    }
+}
+
+/// The AI button's robot mark — SF Symbols has no humanoid robot, so it's drawn:
+/// an antenna, a boxy head outline, two eyes, a mouth slot. Monochrome and
+/// tintable, it inherits the button's white foreground.
+struct RobotMark: View {
+    var body: some View {
+        ZStack {
+            // Antenna — stem + ball.
+            VStack(spacing: 0) {
+                Circle().frame(width: 4, height: 4)
+                Capsule().frame(width: 2.4, height: 4)
+            }
+            .offset(y: -11)
+
+            // Head outline.
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(lineWidth: 2.4)
+                .frame(width: 22, height: 17)
+                .offset(y: 3)
+
+            // Eyes.
+            HStack(spacing: 6) {
+                Circle().frame(width: 4, height: 4)
+                Circle().frame(width: 4, height: 4)
+            }
+            .offset(y: 1)
+
+            // Mouth slot.
+            Capsule()
+                .frame(width: 9, height: 2.4)
+                .offset(y: 8)
+        }
+        .frame(width: 30, height: 30)
     }
 }

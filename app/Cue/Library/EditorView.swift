@@ -22,6 +22,17 @@ public struct EditorView: View {
     @State private var isGrading = false
     @State private var errorBanner: String?
     @State private var savedConfirmation = false
+    /// Index into `gradingSteps` — cycled while the AI grade is in flight so the
+    /// user sees which adjustment the model is working through.
+    @State private var gradingStep = 0
+
+    /// The adjustments the colorist tunes, in a natural grading order. Shown one
+    /// at a time during grading. These mirror the fields of `GradeParams`.
+    private static let gradingSteps = [
+        "Exposure", "Brilliance", "Highlights", "Shadows", "Contrast",
+        "Whites", "Blacks", "Definition", "Warmth", "Tint",
+        "Saturation", "Vibrance", "Color Mix", "Vignette",
+    ]
 
     public init(store: LibraryStore, currentID: Binding<UUID>, backendClient: BackendClient,
                 onShowGrid: @escaping () -> Void, onClose: @escaping () -> Void) {
@@ -112,6 +123,20 @@ public struct EditorView: View {
                 .glassEffect(.regular.tint(.green.opacity(0.5)), in: .capsule)
                 .padding(.top, 58)
                 .transition(.opacity)
+        } else if isGrading {
+            // Live readout of which adjustment the AI colorist is working on.
+            HStack(spacing: 7) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Adjusting \(Self.gradingSteps[gradingStep])")
+                    .font(.subheadline.weight(.semibold))
+                    .contentTransition(.opacity)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 18).padding(.vertical, 10)
+            .glassEffect(.regular.tint(Self.accent.opacity(0.55)), in: .capsule)
+            .padding(.top, 58)
+            .transition(.opacity)
         }
     }
 
@@ -253,6 +278,19 @@ public struct EditorView: View {
         }
         isGrading = true
         errorBanner = nil
+        gradingStep = 0
+
+        // Cycle the adjustment readout while the request is in flight (~5-13s).
+        let cycler = Task { @MainActor in
+            while !Task.isCancelled && isGrading {
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                guard isGrading else { break }
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    gradingStep = (gradingStep + 1) % Self.gradingSteps.count
+                }
+            }
+        }
+        defer { cycler.cancel() }
 
         let originalCI = CIImage(cgImage: original)
         let b64 = await Task.detached(priority: .userInitiated) {
