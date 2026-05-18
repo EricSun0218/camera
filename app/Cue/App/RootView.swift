@@ -50,6 +50,7 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
 
     func start() { camera.start() }
     func stop()  { camera.stop() }
+    func flipCamera() { camera.flipCamera() }
 
     var isAnalyzing: Bool {
         if case .analyzing = state { return true }
@@ -130,8 +131,18 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
                     flowLog.info("requestGuidance: cancelled during zoom-ramp settle, dropping result")
                     return
                 }
-                // Lock onto the subject so the alignment ball tracks it smoothly
-                // (saliency re-detection jitters; VNTrackObjectRequest follows).
+                // Composition already good? Skip the aligning step and shoot now.
+                if let t = currentTarget(),
+                   AlignmentChecker.score(target: t, state: compose) >= alignThreshold {
+                    flowLog.info("requestGuidance: already well-composed — capturing immediately")
+                    self.state = .capturing
+                    startCaptureWatchdog()
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    camera.captureWithAutofocus()
+                    return
+                }
+                // Otherwise, lock onto the subject so the alignment ball tracks
+                // it smoothly (saliency re-detection jitters; tracking follows).
                 let kind: SubjectKind = g.subjectType == .person ? .person : .scene
                 self.cv.beginTracking(seed: AlignmentChecker.trackingSeed(kind: kind, state: self.compose))
                 self.state = .aligning(since: Date())
@@ -174,33 +185,35 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
 
     // MARK: Alignment monitor (called from preview frame ingest)
 
-    private func updateAlignment() {
-        guard case .aligning = state else { return }
-        let target: AlignmentTarget?
+    /// Auto-shutter fires when the alignment score reaches this.
+    private let alignThreshold = 0.9
+
+    /// The AI target derived from the current guidance, or nil if there is none.
+    private func currentTarget() -> AlignmentTarget? {
         switch guidance.subjectType {
         case .person:
-            if let p = guidance.posePlacement {
-                // pose silhouette box: center (x,y), height (h * screen height), width = h / aspect
-                // Approximate to a rect for IoU. Aspect lookup from PoseLibrary:
-                let aspect = PoseLibrary.templates.first(where: { $0.id == p.id })?.aspect ?? 2.4
-                let h = p.height
-                let w = h / aspect
-                target = AlignmentTarget(kind: .person,
-                    box: CGRect(x: p.x - w/2, y: p.y - h/2, width: w, height: h))
-            } else { target = nil }
+            guard let p = guidance.posePlacement else { return nil }
+            // pose silhouette box: center (x,y), height fraction, width = h / aspect.
+            let aspect = PoseLibrary.templates.first(where: { $0.id == p.id })?.aspect ?? 2.4
+            let h = p.height
+            let w = h / aspect
+            return AlignmentTarget(kind: .person,
+                box: CGRect(x: p.x - w / 2, y: p.y - h / 2, width: w, height: h))
         case .scene:
-            if let rect = guidance.sceneTarget {
-                target = AlignmentTarget(kind: .scene, box: rect)
-            } else { target = nil }
+            guard let rect = guidance.sceneTarget else { return nil }
+            return AlignmentTarget(kind: .scene, box: rect)
         case .empty:
-            target = nil
+            return nil
         }
-        guard let t = target else { return }
+    }
+
+    private func updateAlignment() {
+        guard case .aligning = state else { return }
+        guard let t = currentTarget() else { return }
         let score = AlignmentChecker.score(target: t, state: compose)
         alignmentScore = score
-        // 0.9 — the balls must nearly coincide before auto-shutter fires;
-        // require CONSECUTIVE aligned frames (reset to 0 on any frame below).
-        if score >= 0.9 {
+        // Require CONSECUTIVE aligned frames (reset to 0 on any frame below).
+        if score >= alignThreshold {
             alignedFrames += 1
             if alignedFrames >= alignedFramesNeeded {
                 triggerCapture()
@@ -327,6 +340,18 @@ public struct RootView: View {
                     LoadingOverlay().ignoresSafeArea()
                 }
 
+                // Front/back camera flip — top-right, idle only.
+                if canFlip {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            flipButton
+                        }
+                        Spacer()
+                    }
+                    .padding(.top, 56)
+                    .padding(.trailing, 20)
+                }
 
                 VStack {
                     if let s = vm.statusBanner {
@@ -362,6 +387,25 @@ public struct RootView: View {
         case .capturing, .grading: return true
         default: return false
         }
+    }
+
+    /// The flip button only shows when the camera is idle — flipping mid-flow
+    /// would invalidate the AI's framing analysis.
+    private var canFlip: Bool {
+        switch vm.state {
+        case .idle, .done: return true
+        default: return false
+        }
+    }
+
+    private var flipButton: some View {
+        Button { vm.flipCamera() } label: {
+            Image(systemName: "arrow.triangle.2.circlepath.camera")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 46, height: 46)
+        }
+        .glassEffect(.regular.interactive(), in: .circle)
     }
 
     /// Subject kind for the current AI guidance.

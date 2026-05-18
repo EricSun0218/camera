@@ -28,6 +28,8 @@ public final class CameraSession: NSObject {
     /// Guards against double captures (two taps, or capture() + captureWithAutofocus()
     /// both firing). Mutated only on `sessionQueue`.
     private var isCapturing = false
+    /// Which camera is active. Mutated only on `sessionQueue`.
+    private var currentPosition: AVCaptureDevice.Position = .back
 
     public override init() {
         super.init()
@@ -39,13 +41,11 @@ public final class CameraSession: NSObject {
             self.session.beginConfiguration()
             self.session.sessionPreset = .photo
             do {
-                guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-                    throw CameraError.noBackCamera
-                }
-                let input = try AVCaptureDeviceInput(device: device)
+                let input = try self.makeInput(position: .back)
                 guard self.session.canAddInput(input) else { throw CameraError.configureFailed }
                 self.session.addInput(input)
                 self.videoDeviceInput = input
+                self.currentPosition = .back
 
                 self.videoOutput.alwaysDiscardsLateVideoFrames = true
                 self.videoOutput.videoSettings = [
@@ -54,28 +54,56 @@ public final class CameraSession: NSObject {
                 self.videoOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "cue.camera.video"))
                 guard self.session.canAddOutput(self.videoOutput) else { throw CameraError.configureFailed }
                 self.session.addOutput(self.videoOutput)
-                if let conn = self.videoOutput.connection(with: .video) {
-                    // iOS 17+: 90° = portrait. Replaces deprecated videoOrientation.
-                    if conn.isVideoRotationAngleSupported(90) {
-                        conn.videoRotationAngle = 90
-                    }
-                }
 
                 guard self.session.canAddOutput(self.photoOutput) else { throw CameraError.configureFailed }
                 self.session.addOutput(self.photoOutput)
                 self.photoOutput.maxPhotoQualityPrioritization = .quality
-                // The still-photo connection needs the same portrait rotation as
-                // the preview, otherwise captured photos come out landscape.
-                if let pconn = self.photoOutput.connection(with: .video),
-                   pconn.isVideoRotationAngleSupported(90) {
-                    pconn.videoRotationAngle = 90
-                }
 
+                self.applyPortraitRotation()
                 self.session.commitConfiguration()
             } catch {
                 self.session.commitConfiguration()
                 DispatchQueue.main.async { self.delegate?.cameraDidFail(error) }
             }
+        }
+    }
+
+    /// Build a camera input for the given position.
+    private func makeInput(position: AVCaptureDevice.Position) throws -> AVCaptureDeviceInput {
+        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
+            throw CameraError.noBackCamera
+        }
+        return try AVCaptureDeviceInput(device: device)
+    }
+
+    /// Pin every connection to portrait (90°) — preview and still photo alike,
+    /// otherwise frames/photos come out landscape.
+    private func applyPortraitRotation() {
+        for output in [videoOutput as AVCaptureOutput, photoOutput as AVCaptureOutput] {
+            if let conn = output.connection(with: .video),
+               conn.isVideoRotationAngleSupported(90) {
+                conn.videoRotationAngle = 90
+            }
+        }
+    }
+
+    /// Switch between the back and front camera. Safe to call anytime.
+    public func flipCamera() {
+        sessionQueue.async { [weak self] in
+            guard let self, let oldInput = self.videoDeviceInput else { return }
+            let target: AVCaptureDevice.Position = self.currentPosition == .back ? .front : .back
+            guard let newInput = try? self.makeInput(position: target) else { return }
+            self.session.beginConfiguration()
+            self.session.removeInput(oldInput)
+            if self.session.canAddInput(newInput) {
+                self.session.addInput(newInput)
+                self.videoDeviceInput = newInput
+                self.currentPosition = target
+            } else {
+                self.session.addInput(oldInput)  // revert — keep a working camera
+            }
+            self.applyPortraitRotation()
+            self.session.commitConfiguration()
         }
     }
 
