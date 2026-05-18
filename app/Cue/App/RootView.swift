@@ -198,9 +198,9 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
         guard let t = target else { return }
         let score = AlignmentChecker.score(target: t, state: compose)
         alignmentScore = score
-        // 0.65 is realistic for a hand-held box vs an AI-placed box; require
-        // CONSECUTIVE aligned frames (reset to 0 on any frame below threshold).
-        if score >= 0.65 {
+        // 0.9 — the balls must nearly coincide before auto-shutter fires;
+        // require CONSECUTIVE aligned frames (reset to 0 on any frame below).
+        if score >= 0.9 {
             alignedFrames += 1
             if alignedFrames >= alignedFramesNeeded {
                 triggerCapture()

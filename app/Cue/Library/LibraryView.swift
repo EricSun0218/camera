@@ -157,10 +157,12 @@ public struct LibraryView: View {
         // Off-main decode + cache — keeps grid scrolling smooth.
         AsyncThumbnail(store: store, filename: photo.filename,
                        maxPixel: 400, contentMode: .fill)
-        .aspectRatio(1, contentMode: .fill)
+        // .fit (not .fill) so the cell stays inside its column slot — .fill
+        // overflows the slot and swallows the grid gap.
+        .aspectRatio(1, contentMode: .fit)
         .clipped()
-        // Square cells (no corner radius) so the 1.5pt gaps read as clean
-        // thin black grid lines, Apple Photos style.
+        // Square cells (no corner radius) so the grid gaps read as clean
+        // thin black separator lines, Apple Photos style.
         // A graded photo carries a small, subtle cyan mark so it reads as
         // "AI" at a glance — accent stays rare per DESIGN.md.
         .overlay(alignment: .bottomTrailing) {

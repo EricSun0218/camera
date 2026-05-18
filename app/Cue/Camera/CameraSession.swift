@@ -248,7 +248,10 @@ extension CameraSession: AVCapturePhotoCaptureDelegate {
             return
         }
         guard let data = photo.fileDataRepresentation(),
-              let ci = CIImage(data: data) else {
+              // applyOrientationProperty bakes the EXIF orientation into the
+              // pixels — without it CIImage(data:) hands back the sensor's
+              // native landscape and the photo comes out sideways.
+              let ci = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
             DispatchQueue.main.async { self.delegate?.cameraDidFail(CameraError.configureFailed) }
             return
         }

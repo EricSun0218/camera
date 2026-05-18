@@ -23,10 +23,10 @@ public struct AlignmentView: View {
         self.alignment = alignment
     }
 
-    /// Green at the 0.65 auto-shutter threshold.
+    /// Green at the 0.9 auto-shutter threshold.
     private var targetColor: Color {
-        if alignment >= 0.65 { return .green }
-        if alignment >= 0.4  { return .yellow }
+        if alignment >= 0.9 { return .green }
+        if alignment >= 0.6 { return .yellow }
         return .white
     }
 
@@ -35,7 +35,7 @@ public struct AlignmentView: View {
             let size = geo.size
             let targetPt = centerPoint(of: target, in: size)
             let currentPt = current.map { centerPoint(of: $0, in: size) }
-            let aligned = alignment >= 0.65
+            let aligned = alignment >= 0.9
 
             ZStack {
                 // Arrow from current ball → target ball (only when not yet aligned
