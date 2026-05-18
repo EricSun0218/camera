@@ -312,9 +312,9 @@ final class RootViewModel: ObservableObject, CameraSessionDelegate {
     /// Show the step-back / step-closer hint for an out-of-range zoom.
     private func updateFramingBanner(needed: Double, minO: Double, maxO: Double) {
         if needed < minO {
-            statusBanner = "后退一点"
+            statusBanner = "Step back"
         } else if needed > maxO {
-            statusBanner = "靠近一点"
+            statusBanner = "Step closer"
         }
     }
 
