@@ -35,4 +35,14 @@ import Vision
         #expect(m.clampOptical(5.0) == 3.0)
         #expect(m.clampOptical(1.5) == 1.5)
     }
+
+    @Test func initClampsInvalidInputs() {
+        // oneXRawFactor below 1.0 is clamped up to 1.0.
+        #expect(ZoomMapping(oneXRawFactor: 0.5, minRaw: 1.0, maxRaw: 10.0).oneXRawFactor == 1.0)
+        // minRaw below 1.0 is clamped up to 1.0.
+        #expect(ZoomMapping(oneXRawFactor: 1.0, minRaw: 0.0, maxRaw: 10.0).minRaw == 1.0)
+        // maxRaw below minRaw is clamped up to minRaw.
+        let m = ZoomMapping(oneXRawFactor: 1.0, minRaw: 4.0, maxRaw: 2.0)
+        #expect(m.maxRaw == 4.0)
+    }
 }

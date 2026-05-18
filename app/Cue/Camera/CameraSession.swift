@@ -23,14 +23,15 @@ public enum CameraError: Error {
 public struct ZoomMapping: Equatable {
     /// Raw `videoZoomFactor` of the main "1x" lens (1.0 on a single-cam device).
     public let oneXRawFactor: CGFloat
-    /// Device raw zoom bounds.
+    /// Device raw zoom lower bound — clamped to ≥ 1.0 (`videoZoomFactor` is never below 1.0).
     public let minRaw: CGFloat
+    /// Device raw zoom upper bound — clamped to ≥ `minRaw`.
     public let maxRaw: CGFloat
 
     public init(oneXRawFactor: CGFloat, minRaw: CGFloat, maxRaw: CGFloat) {
         self.oneXRawFactor = max(oneXRawFactor, 1.0)
-        self.minRaw = minRaw
-        self.maxRaw = maxRaw
+        self.minRaw = max(minRaw, 1.0)
+        self.maxRaw = max(maxRaw, self.minRaw)
     }
 
     /// Lowest optical factor the device can reach (0.5 on multi-cam, 1.0 single-cam).
