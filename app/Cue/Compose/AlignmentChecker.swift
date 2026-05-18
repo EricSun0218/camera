@@ -18,21 +18,28 @@ public struct AlignmentTarget {
 }
 
 public enum AlignmentChecker {
-    /// Compute IoU between detected subject and target.
-    /// - For .person: use the body pose joints bounding box (or face box fallback).
-    /// - For .scene: use the saliency box.
-    /// Vision boxes come in normalized BOTTOM-LEFT origin; we convert.
+    /// Alignment score 0...1 — how close the detected subject's CENTER is to the
+    /// target's center. The UI shows two constant-size balls at those two centers,
+    /// so alignment must be a center-distance match, NOT area IoU: two boxes can
+    /// share a center but differ wildly in size, which the user can't fix (ball
+    /// size is fixed) and which would keep IoU low even when the balls fully overlap.
+    /// 1.0 = centers coincide; 0 = centers `maxAlignDistance` apart or further.
+    public static let maxAlignDistance: Double = 0.18
+
     public static func score(target: AlignmentTarget, state: ComposeState) -> Double {
         guard let d = detectedBox(kind: target.kind, state: state) else { return 0 }
-        return iou(d, target.box)
+        let dx = Double(d.midX - target.box.midX)
+        let dy = Double(d.midY - target.box.midY)
+        let dist = (dx * dx + dy * dy).squareRoot()
+        return max(0, 1 - dist / maxAlignDistance)
     }
 
     /// The live subject box in normalized [0..1] TOP-LEFT viewfinder space.
     /// While an alignment session is running, this is the actively-TRACKED box
     /// (one locked subject, smooth across frames). Without tracking it falls
     /// back to per-frame detection (jittery — only used before a session locks).
-    /// Returns nil when no subject is available. Same box the scorer uses for
-    /// IoU, so the UI draws exactly what the scorer measures.
+    /// Returns nil when no subject is available. Same box the scorer uses, so
+    /// the UI draws its center ball exactly where the scorer measures.
     public static func detectedBox(kind: SubjectKind, state: ComposeState) -> CGRect? {
         // Tracked box wins — it follows the phone smoothly.
         if let tracked = state.trackedBox {
@@ -83,13 +90,5 @@ public enum AlignmentChecker {
         }
         // Nothing detected — lock the centre patch; it still moves with the phone.
         return CGRect(x: 0.34, y: 0.30, width: 0.32, height: 0.40)
-    }
-
-    private static func iou(_ a: CGRect, _ b: CGRect) -> Double {
-        let inter = a.intersection(b)
-        if inter.isNull || inter.isEmpty { return 0 }
-        let ia = Double(inter.width * inter.height)
-        let ua = Double(a.width * a.height) + Double(b.width * b.height) - ia
-        return ua <= 0 ? 0 : ia / ua
     }
 }

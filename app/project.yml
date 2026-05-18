@@ -28,7 +28,6 @@ targets:
       properties:
         CFBundleDisplayName: Cue
         UILaunchScreen: {}
-        UIRequiresFullScreen: YES
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSCameraUsageDescription: "Cue uses the camera to shoot photos and give real-time composition and color guidance."
         NSPhotoLibraryAddUsageDescription: "Cue saves your auto-graded photos to your photo library."
