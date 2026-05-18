@@ -16,6 +16,39 @@ public enum CameraError: Error {
     case configureFailed
 }
 
+/// Maps between an *optical* zoom factor (the 0.5x–3x scale the user and AI
+/// think in) and the device's raw `videoZoomFactor`. On a virtual multi-camera
+/// device raw 1.0 is the ultra-wide; the main "1x" lens sits at a higher raw
+/// factor (`oneXRawFactor`). Pure value type — no device dependency, unit-tested.
+public struct ZoomMapping: Equatable {
+    /// Raw `videoZoomFactor` of the main "1x" lens (1.0 on a single-cam device).
+    public let oneXRawFactor: CGFloat
+    /// Device raw zoom bounds.
+    public let minRaw: CGFloat
+    public let maxRaw: CGFloat
+
+    public init(oneXRawFactor: CGFloat, minRaw: CGFloat, maxRaw: CGFloat) {
+        self.oneXRawFactor = max(oneXRawFactor, 1.0)
+        self.minRaw = minRaw
+        self.maxRaw = maxRaw
+    }
+
+    /// Lowest optical factor the device can reach (0.5 on multi-cam, 1.0 single-cam).
+    public var minOptical: CGFloat { minRaw / oneXRawFactor }
+    /// Highest optical factor we expose — capped at 3.0.
+    public var maxOptical: CGFloat { min(maxRaw / oneXRawFactor, 3.0) }
+
+    /// Clamp an optical factor into `[minOptical, maxOptical]`.
+    public func clampOptical(_ optical: CGFloat) -> CGFloat {
+        max(minOptical, min(optical, maxOptical))
+    }
+
+    /// Raw `videoZoomFactor` for an optical factor (clamped first).
+    public func rawFor(optical: CGFloat) -> CGFloat {
+        clampOptical(optical) * oneXRawFactor
+    }
+}
+
 public final class CameraSession: NSObject {
     public let session = AVCaptureSession()
     public weak var delegate: CameraSessionDelegate?
